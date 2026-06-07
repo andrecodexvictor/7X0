@@ -122,6 +122,7 @@ export interface SimulationRaceResult {
     color: string;
     dnf: boolean;
     incident?: string;
+    trackEffect?: string;
   }[];
 }
 

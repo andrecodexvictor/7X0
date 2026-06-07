@@ -242,7 +242,7 @@ export function runChampionshipSimulation(
 
   // 3. Loop over courses
   CIRCUITS.forEach((race, raceIdx) => {
-    const driverRaceScores: { driver: DriverEntry; score: number; dnf: boolean; dnfReason?: string }[] = [];
+    const driverRaceScores: { driver: DriverEntry; score: number; dnf: boolean; dnfReason?: string; trackEffect?: string }[] = [];
 
     gridDrivers.forEach(drv => {
       // Base performance formula
@@ -277,9 +277,63 @@ export function runChampionshipSimulation(
         }
       }
 
+      // Calculate track style driver-specific bonuses and debuffs
+      let trackModifier = 0;
+      let trackEffectDesc = '';
+
+      if (race.isWet) {
+        if (drv.chuva >= 94) {
+          trackModifier += 6;
+          trackEffectDesc = '🌧️ Rei de Pista Molhada (+6)';
+        } else if (drv.chuva < 82) {
+          trackModifier -= 5;
+          trackEffectDesc = '⚠️ Escorregando na Chuva (-5)';
+        }
+      } else {
+        if (drv.aggressiveness >= 94 && (race.type === 'veloz' || race.type === 'rua')) {
+          trackModifier += 3;
+          trackEffectDesc = '🔥 Overtake Agressivo (+3)';
+        }
+      }
+
+      if (race.type === 'veloz') {
+        if (drv.pace >= 97) {
+          trackModifier += 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⚡ Ritmo de Reta (+4)` : '⚡ Ritmo de Reta (+4)';
+        } else if (drv.pace < 85) {
+          trackModifier -= 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🐢 Baixa Potência (-4)` : '🐢 Baixa Potência (-4)';
+        }
+      } else if (race.type === 'rua') {
+        if (drv.consistency >= 94) {
+          trackModifier += 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🛡️ Precisão Urbana (+4)` : '🛡️ Precisão Urbana (+4)';
+        } else if (drv.consistency < 84) {
+          trackModifier -= 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 💥 Risco de Muro (-4)` : '💥 Risco de Muro (-4)';
+        }
+      } else if (race.type === 'técnico') {
+        if (drv.consistency >= 95) {
+          trackModifier += 3;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 📐 Curvatura Técnica (+3)` : '📐 Curvatura Técnica (+3)';
+        }
+        if (drv.aggressiveness >= 95) {
+          trackModifier -= 3;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⛔ Desgaste de Pneus (-3)` : '⛔ Desgaste de Pneus (-3)';
+        }
+      } else if (race.type === 'clássico') {
+        if (drv.consistency >= 92 && drv.reliability >= 92) {
+          trackModifier += 3;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🏆 Fluxo Histórico (+3)` : '🏆 Fluxo Histórico (+3)';
+        }
+      }
+
+      // Apply modifiers to base grid score
+      let adjustedGridScore = baseGridScore + trackModifier;
+
       // Apply controlled randomness (between -8 and +8)
       const rngFactor = (Math.random() - 0.5) * 16;
-      let finalScore = baseGridScore + rngFactor;
+      let finalScore = adjustedGridScore + rngFactor;
 
       // Calculate DNF likelihood
       // Aggressiveness increases risk slightly. Reliability decreases risk.
@@ -307,6 +361,7 @@ export function runChampionshipSimulation(
         score: isDnf ? -999 : finalScore,
         dnf: isDnf,
         dnfReason,
+        trackEffect: trackEffectDesc || undefined
       });
     });
 
@@ -315,7 +370,7 @@ export function runChampionshipSimulation(
 
     // Prepare Podium list & detailed positions
     const podium: { driver: string; team: string; color: string }[] = [];
-    const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string }[] = [];
+    const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string; trackEffect?: string }[] = [];
 
     driverRaceScores.forEach((item, posIdx) => {
       const isDnf = item.dnf;
@@ -348,6 +403,7 @@ export function runChampionshipSimulation(
         color: item.driver.color,
         dnf: isDnf,
         incident: isDnf ? item.dnfReason : undefined,
+        trackEffect: item.trackEffect
       });
     });
 

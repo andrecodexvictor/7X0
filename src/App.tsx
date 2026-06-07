@@ -136,6 +136,7 @@ export default function App() {
   const [liveStatsA, setLiveStatsA] = useState({ speed: 0, throttle: 0, brake: 0, temp: 80, score: 0, status: 'Pronto' });
   const [liveStatsB, setLiveStatsB] = useState({ speed: 0, throttle: 0, brake: 0, temp: 80, score: 0, status: 'Pronto' });
   const [liveSector, setLiveSector] = useState<'Reta' | 'Curva' | 'Chuva' | 'S' | 'Mista'>('Reta');
+  const [circuitFilter, setCircuitFilter] = useState<'all' | 'rua' | 'técnico' | 'veloz' | 'clássico' | 'wet'>('all');
 
   const liveDuelTimerRef = React.useRef<any>(null);
 
@@ -1506,6 +1507,7 @@ Jogue agora em: ${window.location.href}`;
         
         {/* ==================== 1. TELA HOME ==================== */}
         {gameMode === 'home' && (
+          <>
           <div id="screen_home" className="grid grid-cols-1 lg:grid-cols-12 gap-8 py-4 items-center">
             
             {/* Esquerda: Banner / Apresentação */}
@@ -1617,6 +1619,189 @@ Jogue agora em: ${window.location.href}`;
               </div>
             </div>
           </div>
+
+          {/* GUIA DE EXPLORAÇÃO DE PISTAS & TELEMETRIA DE BÔNUS */}
+          <div id="circuits_guidance_section" className="mt-8 bg-[#0A0A0A] border border-[#222] rounded-lg p-5 sm:p-6 space-y-6 shadow-xl animate-fade-in">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-[#222] pb-4 gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2.5">
+                  <Compass className="h-5 w-5 text-[#FF1801]" />
+                  <h3 className="font-display font-medium text-white text-base uppercase tracking-wider">
+                    🏁 Guia de Circuitos & Telemetria de Climas
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-500 max-w-2xl font-sans">
+                  Descubra as catedrais da velocidade da F1. Cada pista de corrida ativa bônus de performance especiais ou debuffs de risco para seus pilotos baseado em seus atributos reais.
+                </p>
+              </div>
+
+              {/* Filtros rápidos dos estilos */}
+              <div className="flex flex-wrap gap-1.5 text-xs font-mono">
+                {[
+                  { id: 'all', label: 'TUDO' },
+                  { id: 'veloz', label: '⚡ VELOZ' },
+                  { id: 'rua', label: '🚧 RUA' },
+                  { id: 'técnico', label: '📐 TÉCNICO' },
+                  { id: 'clássico', label: '🏆 CLÁSSICO' },
+                  { id: 'wet', label: '🌧️ CHUVA ATIVA' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    id={`btn_filter_circuits_${item.id}`}
+                    onClick={() => {
+                      setCircuitFilter(item.id as any);
+                      if (typeof playBeep === 'function') {
+                        playBeep(400, 0.05);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded transition-all font-bold cursor-pointer border ${
+                      circuitFilter === item.id
+                        ? 'bg-[#FF1801] text-white border-[#FF1801] shadow-[0_0_10px_rgba(255,24,1,0.25)]'
+                        : 'bg-[#111] text-gray-400 border-[#222] hover:text-white hover:border-[#444]'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Listagem em Bento Grid de Circuitos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {CIRCUITS.filter(rc => {
+                if (circuitFilter === 'all') return true;
+                if (circuitFilter === 'wet') return rc.isWet;
+                return rc.type === circuitFilter;
+              }).map((rc, idx) => {
+                const isVeloz = rc.type === 'veloz';
+                const isRua = rc.type === 'rua';
+                const isTecnico = rc.type === 'técnico';
+                const isClassico = rc.type === 'clássico';
+
+                return (
+                  <div
+                    key={rc.name}
+                    id={`circuit_card_${rc.name.toLowerCase().replace(/\s+/g, '_')}`}
+                    className="group bg-gradient-to-b from-[#111] to-[#080808] border border-[#1C1C1C] hover:border-[#FF1801]/30 p-4 rounded transition-all duration-300 shadow flex flex-col justify-between space-y-4 hover:shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between items-start">
+                        <span className="text-[9px] font-mono text-gray-500 font-bold tracking-wider uppercase block">
+                          Circuito {idx + 1}
+                        </span>
+                        
+                        {/* Indicadores de Estilo e Clima */}
+                        <div className="flex gap-1 items-center">
+                          {rc.isWet && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold tracking-wide border bg-sky-950/40 text-sky-400 border-sky-400/20 animate-pulse">
+                              🌧️ CHUVA
+                            </span>
+                          )}
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold tracking-wide border uppercase ${
+                            rc.type === 'veloz' ? 'bg-purple-950/40 text-purple-400 border-purple-400/20' :
+                            rc.type === 'rua' ? 'bg-amber-950/40 text-amber-500 border-amber-500/20' :
+                            rc.type === 'técnico' ? 'bg-blue-950/40 text-blue-400 border-blue-400/20' :
+                            'bg-emerald-950/40 text-emerald-400 border-emerald-400/20'
+                          }`}>
+                            {rc.type === 'veloz' ? '⚡ VELOZ' :
+                             rc.type === 'rua' ? '🚧 RUA' :
+                             rc.type === 'técnico' ? '📐 TÉCNICO' :
+                             '🏆 CLÁSSICO'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-sm font-display font-medium text-white leading-tight group-hover:text-[#FF1801] transition-colors">
+                            {rc.name}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-mono italic mt-0.5 block">{rc.country}</span>
+                      </div>
+
+                      <p className="text-[11px] text-gray-500 leading-relaxed font-sans min-h-[44px]">
+                        {rc.description}
+                      </p>
+                    </div>
+
+                    {/* Bloco Dinâmico de Telemetria de Atributos */}
+                    <div className="bg-black/60 border border-[#1A1A1A] rounded p-2.5 space-y-1.5 font-mono text-[9px] text-[#888]">
+                      <div className="border-b border-[#222]/60 pb-1 flex justify-between items-center text-[8px] uppercase font-bold text-gray-500 tracking-wider">
+                        <span>Fatores de Simulação</span>
+                        <span className="text-gray-400">Impacto</span>
+                      </div>
+
+                      {/* Bônus do tipo */}
+                      <div className="space-y-1 text-gray-400">
+                        {rc.isWet ? (
+                          <>
+                            <div className="flex justify-between text-green-400 font-bold leading-none">
+                              <span>🌧️ Chuva ≥ 94:</span>
+                              <span>+6 Pts</span>
+                            </div>
+                            <div className="flex justify-between text-[#FF1801] font-bold leading-none mt-1">
+                              <span>⚠️ Chuva &lt; 82:</span>
+                              <span>-5 Pts</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between text-green-400 leading-none">
+                              <span>⚡ Ritmo ≥ 97:</span>
+                              <span>+4 Pts</span>
+                            </div>
+                            <div className="flex justify-between text-[#FF1801] leading-none">
+                              <span>🐢 Ritmo &lt; 85:</span>
+                              <span>-4 Pts</span>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Extra dependente do tipo */}
+                        {isVeloz && (
+                          <div className="text-[8px] text-gray-600 italic border-t border-[#1a1a1a] pt-1 leading-normal">
+                            A velocidade máxima do Chassi eleva o piloto em 50% da pontuação basilar de reta.
+                          </div>
+                        )}
+                        {isRua && (
+                          <>
+                            <div className="flex justify-between text-green-400 leading-none border-t border-[#1C1C1C] pt-1">
+                              <span>🛡️ Consistência ≥ 94:</span>
+                              <span>+4 Pts</span>
+                            </div>
+                            <div className="flex justify-between text-[#FF1801] leading-none">
+                              <span>💥 Consistência &lt; 84:</span>
+                              <span>-4 Pts</span>
+                            </div>
+                          </>
+                        )}
+                        {isTecnico && (
+                          <>
+                            <div className="flex justify-between text-green-400 leading-none border-t border-[#1C1C1C] pt-1">
+                              <span>📐 Consistência ≥ 95:</span>
+                              <span>+3 Pts</span>
+                            </div>
+                            <div className="flex justify-between text-[#FF1801] leading-none">
+                              <span>⛔ Agressividade ≥ 95:</span>
+                              <span>-3 Pts</span>
+                            </div>
+                          </>
+                        )}
+                        {isClassico && (
+                          <div className="flex justify-between text-emerald-400 leading-none border-t border-[#1C1C1C] pt-1">
+                            <span>🏆 Consis./Confi. ≥ 92:</span>
+                            <span>+3 Pts</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          </>
         )}
 
         {/* ==================== 2. TELA DRAFT (GAMEPLAY) ==================== */}
@@ -2246,7 +2431,7 @@ Jogue agora em: ${window.location.href}`;
                       {simulationResult.driverStandings.map((drv: any, idx: number) => {
                         return (
                           <tr
-                            key={drv.driver}
+                            key={`standing-${drv.driver}-${drv.team}-${idx}`}
                             className={`border-b border-black/40 last:border-0 ${
                               drv.isUser 
                                 ? 'bg-[#FF1801]/10 border-l-2 border-[#FF1801] text-white font-bold' 
@@ -2575,33 +2760,41 @@ Jogue agora em: ${window.location.href}`;
                             const isUserDrv = p.team === 'Seu Time';
                             return (
                               <div
-                                key={p.driver}
-                                className={`flex justify-between items-center py-1.5 border-b border-black/30 last:border-0 ${
+                                key={`pos-${p.driver}-${p.team}-${pIdx}`}
+                                className={`flex flex-col py-1.5 border-b border-black/30 last:border-0 ${
                                   isUserDrv 
                                     ? 'text-white font-bold bg-[#FF1801]/10 px-1 rounded-sm' 
                                     : ''
                                 }`}
                               >
-                                <span className="flex items-center space-x-1.5 truncate max-w-[170px]">
-                                  <span className={`w-4 font-bold ${pIdx < 3 ? 'text-amber-500 font-mono' : 'text-gray-500'}`}>
-                                    {pIdx + 1}
-                                  </span>
-                                  <span className="truncate" title={`${p.driver} (${p.team})`}>
-                                    {p.driver} <span className="text-[7.5px] opacity-60 text-gray-400">({p.team})</span>
-                                  </span>
-                                </span>
-                                
-                                <span className="shrink-0 font-bold">
-                                  {p.dnf ? (
-                                    <span className="text-[#FF1801] text-[7px] uppercase bg-red-950/20 px-1.5 py-0.5 rounded border border-red-900/30" title={p.incident}>
-                                      🚨 DNF
+                                <div className="flex justify-between items-center bg-transparent">
+                                  <span className="flex items-center space-x-1.5 truncate max-w-[170px]">
+                                    <span className={`w-4 font-bold ${pIdx < 3 ? 'text-amber-500 font-mono' : 'text-gray-500'}`}>
+                                      {pIdx + 1}
                                     </span>
-                                  ) : (
-                                    <span className={pIdx < 10 ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
-                                      +{p.points}p
+                                    <span className="truncate" title={`${p.driver} (${p.team})`}>
+                                      {p.driver} <span className="text-[7.5px] opacity-60 text-gray-400">({p.team})</span>
                                     </span>
-                                  )}
-                                </span>
+                                  </span>
+                                  
+                                  <span className="shrink-0 font-bold">
+                                    {p.dnf ? (
+                                      <span className="text-[#FF1801] text-[7px] uppercase bg-red-950/20 px-1.5 py-0.5 rounded border border-red-900/30" title={p.incident}>
+                                        🚨 DNF
+                                      </span>
+                                    ) : (
+                                      <span className={pIdx < 10 ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
+                                        +{p.points}p
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                {p.trackEffect && (
+                                  <div className="text-[7.5px] text-gray-400 font-mono mt-0.5 ml-5 flex items-center space-x-1 leading-none">
+                                    <span className="text-[#FF1801]/80 font-bold">»</span>
+                                    <span>{p.trackEffect}</span>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
