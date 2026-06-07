@@ -1,0 +1,58 @@
+[
+  {
+    "name": "GP de Interlagos",
+    "country": "Brasil 🇧🇷",
+    "flag": "BR",
+    "type": "chuva",
+    "isWet": true,
+    "description": "Circuito icônico de São Paulo. Ritmo ondulado e clima instável trazendo chances altíssimas de tempestades repentinas."
+  },
+  {
+    "name": "GP de Spa-Francorchamps",
+    "country": "Bélgica 🇧🇪",
+    "flag": "BE",
+    "type": "veloz",
+    "isWet": false,
+    "description": "Circuito super veloz nas colinas das Ardenas europeias. Curva Eau Rouge testa coragem e aerodinâmica máxima do carro."
+  },
+  {
+    "name": "GP de Mônaco",
+    "country": "Mônaco 🇲🇨",
+    "flag": "MC",
+    "type": "rua",
+    "isWet": false,
+    "description": "O circuito urbano mais tradicional de todos. Sem margem para erros, curvas estreitas e foco em torque e dirigibilidade refinada."
+  },
+  {
+    "name": "GP de Monza",
+    "country": "Itália 🇮🇹",
+    "flag": "IT",
+    "type": "veloz",
+    "isWet": false,
+    "description": "O Templo da Velocidade. Retas infinitas que espremem a potência máxima do motor e baixa resistência aerodinâmica."
+  },
+  {
+    "name": "GP de Silverstone",
+    "country": "Reino Unido 🇬🇧",
+    "flag": "GB",
+    "type": "técnico",
+    "isWet": false,
+    "description": "Pista clássica inglesa repleta de sequências de alta velocidade (como Copse e Becketts) desafiando a pressão aerodinâmica."
+  },
+  {
+    "name": "GP de Suzuka",
+    "country": "Japão 🇯🇵",
+    "flag": "JP",
+    "type": "técnico",
+    "isWet": false,
+    "description": "Único traçado em formato de '8' do calendário. Extremamente técnico, curvas 'S' velozes e a famosa curva rápida 130R."
+  },
+  {
+    "name": "GP de Austin (COTA)",
+    "country": "Estados Unidos 🇺🇸",
+    "flag": "US",
+    "type": "clássico",
+    "isWet": false,
+    "description": "Circuito das Américas em Austin. Grande subida na curva 1 e sequências rítmicas espetaculares."
+  }
+]

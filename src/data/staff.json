@@ -1,0 +1,75 @@
+[
+  {
+    "type": "boss",
+    "id": "ron_dennis_1988",
+    "name": "Ron Dennis",
+    "country": "Reino Unido 🇬🇧",
+    "rating_geral": 96,
+    "leadership": 99,
+    "pressure_handling": 94,
+    "prestige": 98,
+    "description": "Perfeccionista implacável, criador da dinastia moderna da McLaren e gerador de altíssima disciplina."
+  },
+  {
+    "type": "boss",
+    "id": "jean_todt_2004",
+    "name": "Jean Todt",
+    "country": "França 🇫🇷",
+    "rating_geral": 98,
+    "leadership": 99,
+    "pressure_handling": 98,
+    "prestige": 99,
+    "description": "Líder supremo da era mais vitoriosa da Ferrari. Blindou Maranello contra pressões externas."
+  },
+  {
+    "type": "boss",
+    "id": "christian_horner_2023",
+    "name": "Christian Horner",
+    "country": "Reino Unido 🇬🇧",
+    "rating_geral": 95,
+    "leadership": 96,
+    "pressure_handling": 97,
+    "prestige": 94,
+    "description": "Líder mordaz e experiente que impôs ritmo inabalável e focou em talentos superlativos na Red Bull."
+  },
+  {
+    "type": "strategist",
+    "id": "neil_oatley_1988",
+    "name": "Neil Oatley",
+    "rating_geral": 93,
+    "calculated_risk": 92,
+    "pit_tactics": 94,
+    "reactivity": 91,
+    "description": "Engenheiro de mureta clássico com visão tática serena, garantindo corridas sob controle rígido."
+  },
+  {
+    "type": "strategist",
+    "id": "hannah_schmitz_2023",
+    "name": "Hannah Schmitz",
+    "rating_geral": 97,
+    "calculated_risk": 98,
+    "pit_tactics": 99,
+    "reactivity": 98,
+    "description": "Lenda das chamadas em tempo real. Reações matemáticas frias diante do caos climático e safety cars."
+  },
+  {
+    "type": "engineer",
+    "id": "steve_nichols_1988",
+    "name": "Steve Nichols",
+    "rating_geral": 94,
+    "aerodynamics": 95,
+    "innovation": 93,
+    "weight_saving": 96,
+    "description": "Projetista-chefe do icônico MP4/4. Trouxe um centro de gravidade extremamente baixo para o chassi."
+  },
+  {
+    "type": "engineer",
+    "id": "adrian_newey_2023",
+    "name": "Adrian Newey",
+    "rating_geral": 100,
+    "aerodynamics": 100,
+    "innovation": 99,
+    "weight_saving": 94,
+    "description": "O mago aerodinâmico. Consegue visualizar o fluxo do ar a olho nu e projetar carros imbatíveis."
+  }
+]

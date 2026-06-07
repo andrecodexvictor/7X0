@@ -1,0 +1,52 @@
+[
+  {
+    "teamId": "mclaren",
+    "season": 1988,
+    "racer1": "Ayrton Senna",
+    "racer2": "Alain Prost",
+    "principal": "Ron Dennis",
+    "points": 199,
+    "wins": 15,
+    "car": "McLaren MP4/4"
+  },
+  {
+    "teamId": "ferrari",
+    "season": 2004,
+    "racer1": "Michael Schumacher",
+    "racer2": "Rubens Barrichello",
+    "principal": "Jean Todt",
+    "points": 262,
+    "wins": 15,
+    "car": "Ferrari F2004"
+  },
+  {
+    "teamId": "redbull",
+    "season": 2023,
+    "racer1": "Max Verstappen",
+    "racer2": "Sergio Pérez",
+    "principal": "Christian Horner",
+    "points": 860,
+    "wins": 21,
+    "car": "Red Bull RB19"
+  },
+  {
+    "teamId": "mercedes",
+    "season": 2021,
+    "racer1": "Lewis Hamilton",
+    "racer2": "Valtteri Bottas",
+    "principal": "Toto Wolff",
+    "points": 613,
+    "wins": 9,
+    "car": "Mercedes W12"
+  },
+  {
+    "teamId": "brawn",
+    "season": 2009,
+    "racer1": "Jenson Button",
+    "racer2": "Rubens Barrichello",
+    "principal": "Ross Brawn",
+    "points": 172,
+    "wins": 8,
+    "car": "Brawn BGP 001"
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "teamId": "ferrari",
+    "name": "Scuderia Ferrari",
+    "country": "Itália 🇮🇹",
+    "totalTitles": 16,
+    "notableCar": "Ferrari F2004",
+    "eraTag": "historico"
+  },
+  {
+    "teamId": "mclaren",
+    "name": "McLaren Racing",
+    "country": "Reino Unido 🇬🇧",
+    "totalTitles": 8,
+    "notableCar": "McLaren MP4/4",
+    "eraTag": "historico"
+  },
+  {
+    "teamId": "williams",
+    "name": "Williams Racing",
+    "country": "Reino Unido 🇬🇧",
+    "totalTitles": 9,
+    "notableCar": "Williams FW14B",
+    "eraTag": "historico"
+  },
+  {
+    "teamId": "redbull",
+    "name": "Red Bull Racing",
+    "country": "Áustria 🇦🇹",
+    "totalTitles": 6,
+    "notableCar": "Red Bull RB19",
+    "eraTag": "efeito_solo"
+  },
+  {
+    "teamId": "mercedes",
+    "name": "Mercedes-AMG Petronas",
+    "country": "Alemanha 🇩🇪",
+    "totalTitles": 8,
+    "notableCar": "W11",
+    "eraTag": "era_hibrida"
+  },
+  {
+    "teamId": "brawn",
+    "name": "Brawn GP",
+    "country": "Reino Unido 🇬🇧",
+    "totalTitles": 1,
+    "notableCar": "BGP 001",
+    "eraTag": "era_v8"
+  },
+  {
+    "teamId": "renault",
+    "name": "Renault F1",
+    "country": "França 🇫🇷",
+    "totalTitles": 2,
+    "notableCar": "Renault R25",
+    "eraTag": "era_v10"
+  }
+]

@@ -1,0 +1,1019 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { TeamCombination, Race, GameSlot } from './types';
+
+export const GAME_SLOTS: GameSlot[] = [
+  {
+    id: 'driver_1',
+    name: 'Piloto Titular 1',
+    description: 'Seu primeiro piloto principal. Liderará a busca por vitórias.',
+    icon: 'User',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'driver_2',
+    name: 'Piloto Titular 2',
+    description: 'O segundo piloto titular. Fundamental para somar pontos no Mundial de Construtores.',
+    icon: 'UserCheck',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'reserve_1',
+    name: 'Piloto Reserva 1',
+    description: 'Piloto reserva e de suporte. Traz consistência e estabilidade caso precise de cobertura.',
+    icon: 'Shield',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'reserve_2',
+    name: 'Piloto Reserva 2/Histórico',
+    description: 'Piloto clássico que serve como mentor. Ajuda a impulsionar o desenvolvimento técnico.',
+    icon: 'History',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'wet_specialist',
+    name: 'Especialista em Chuva',
+    description: 'Piloto conhecido pelo seu maestrismo sob as pistas molhadas. Dá bônus gigante em GPs de chuva!',
+    icon: 'CloudRain',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'legacy_wildcard',
+    name: 'Coringa do Legado',
+    description: 'Uma lenda livre! Pode receber bônus por era ou sinergia de nacionalidade.',
+    icon: 'Sparkles',
+    type: 'driver',
+    filledWith: null,
+  },
+  {
+    id: 'team_boss',
+    name: 'Chefe de Equipe',
+    description: 'Comanda a liderança, gerência política do paddock e acalma rivalidades na pista.',
+    icon: 'Award',
+    type: 'boss',
+    filledWith: null,
+  },
+  {
+    id: 'chassis',
+    name: 'Carro / Chassi',
+    description: 'A máquina! Determina a velocidade máxima base, aerodinâmica e confiabilidade do motor.',
+    icon: 'Cpu',
+    type: 'chassis',
+    filledWith: null,
+  },
+  {
+    id: 'strategist',
+    name: 'Estrategista',
+    description: 'O cérebro na mureta de boxes. Inteligência de pit stops e chamadas em safety-cars.',
+    icon: 'Compass',
+    type: 'strategist',
+    filledWith: null,
+  },
+  {
+    id: 'engineer',
+    name: 'Engenheiro Chefe',
+    description: 'Responsável pelo desenvolvimento aerodinâmico e refinamento mecânico do carro.',
+    icon: 'Wrench',
+    type: 'engineer',
+    filledWith: null,
+  },
+];
+
+export const CIRCUITS: Race[] = [
+  {
+    name: 'Grande Prêmio do Brasil',
+    country: 'Brasil 🇧🇷',
+    flag: 'BR',
+    type: 'clássico',
+    isWet: true, // Interlagos often rains!
+    description: 'Interlagos. Curvas rápidas, subida dos boxes e atmosfera incrível com grande risco de chuva.',
+  },
+  {
+    name: 'Grande Prêmio da Bélgica',
+    country: 'Bélgica 🇧🇪',
+    flag: 'BE',
+    type: 'veloz',
+    isWet: true, // Spa rains often as well
+    description: 'Spa-Francorchamps. Eau Rouge, tempo instável e velocidades extremas nas montanhas das Ardenas.',
+  },
+  {
+    name: 'Grande Prêmio de Mônaco',
+    country: 'Mônaco 🇲🇨',
+    flag: 'MC',
+    type: 'rua',
+    isWet: false,
+    description: 'Monte Carlo. Ruas apertadas, sem margem de erro, onde a aerodinâmica e o estrategista dominam.',
+  },
+  {
+    name: 'Grande Prêmio da Itália',
+    country: 'Itália 🇮🇹',
+    flag: 'IT',
+    type: 'veloz',
+    isWet: false,
+    description: 'Monza. O Templo da Velocidade. Pé embaixo o tempo todo. Vence o motor e a menor resistência do ar.',
+  },
+  {
+    name: 'Grande Prêmio da Grã-Bretanha',
+    country: 'Reino Unido 🇬🇧',
+    flag: 'GB',
+    type: 'clássico',
+    isWet: false,
+    description: 'Silverstone. Curvas de alta velocidade Copse, Maggots e Becketts que testam o limite físico.',
+  },
+  {
+    name: 'Grande Prêmio do Japão',
+    country: 'Japão 🇯🇵',
+    flag: 'JP',
+    type: 'técnico',
+    isWet: false,
+    description: 'Suzuka. Formato de "oito", curvas desafiadoras e extrema exigência na habilidade dos pilotos.',
+  },
+  {
+    name: 'Grande Prêmio do Canadá',
+    country: 'Canadá 🇨🇦',
+    flag: 'CA',
+    type: 'técnico',
+    isWet: true,
+    description: 'Montreal. Circuito Gilles Villeneuve. Retas longas, chicanes duras e o famoso Muro dos Campeões.',
+  },
+  {
+    name: 'Grande Prêmio dos EUA',
+    country: 'Estados Unidos 🇺🇸',
+    flag: 'US',
+    type: 'clássico',
+    isWet: false,
+    description: 'Circuito das Américas em Austin. Grande subida na curva 1 e sequências rítmicas espetaculares.',
+  },
+];
+
+export const SEASONS_TEAMS: TeamCombination[] = [
+  {
+    season: 1988,
+    teamId: 'mclaren_1988',
+    teamName: 'McLaren-Honda',
+    logoColor: 'from-[#FF5F00] to-white', // Papaya / White original rocket era
+    borderColor: 'border-[#FF5F00]',
+    textColor: 'text-[#FF5F00]',
+    drivers: [
+      {
+        id: 'senna_1988',
+        name: 'Ayrton Senna',
+        country: 'Brasil 🇧🇷',
+        titles: 3,
+        wins: 41,
+        podiums: 80,
+        poles: 65,
+        rating_geral: 99,
+        pace: 100,
+        consistency: 95,
+        chuva: 100,
+        aggressiveness: 98,
+        reliability: 94,
+        description: 'Rei de Mônaco, das poles e maior piloto sob chuva da história. Determinação inigualável.',
+      },
+      {
+        id: 'prost_1988',
+        name: 'Alain Prost',
+        country: 'França 🇫🇷',
+        titles: 4,
+        wins: 51,
+        podiums: 106,
+        poles: 33,
+        rating_geral: 98,
+        pace: 96,
+        consistency: 100,
+        chuva: 88,
+        aggressiveness: 80,
+        reliability: 98,
+        description: 'O Professor. Cálculo estratégico frio, suavidade mecânica e consistência impressionante.',
+      }
+    ],
+    boss: {
+      id: 'ron_dennis_1988',
+      name: 'Ron Dennis',
+      country: 'Reino Unido 🇬🇧',
+      rating_geral: 96,
+      leadership: 99,
+      pressure_handling: 94,
+      prestige: 98,
+      description: 'Perfeccionista implacável, criador da dinastia moderna da McLaren e gerador de altíssima disciplina.',
+    },
+    chassis: {
+      id: 'mp4_4_1988',
+      name: 'McLaren MP4/4',
+      engine: 'Honda V6 Turbo (V6t)',
+      rating_geral: 99,
+      top_speed: 98,
+      aerodynamics: 100,
+      conducao: 99,
+      reliability: 98,
+      description: 'O carro mais dominante da história do esporte. 15 vitórias em 16 corridas disputadas.',
+    },
+    strategist: {
+      id: 'neil_oatley_1988',
+      name: 'Neil Oatley',
+      rating_geral: 93,
+      calculated_risk: 92,
+      pit_tactics: 94,
+      reactivity: 91,
+      description: 'Engenheiro de mureta clássico com visão tática serena, garantindo corridas sob controle rígido.',
+    },
+    engineer: {
+      id: 'steve_nichols_1988',
+      name: 'Steve Nichols',
+      rating_geral: 94,
+      aerodynamics: 95,
+      innovation: 93,
+      weight_saving: 96,
+      description: 'Projetista-chefe do icônico MP4/4. Trouxe um centro de gravidade extremamente baixo para o chassi.',
+    }
+  },
+  {
+    season: 2004,
+    teamId: 'ferrari_2004',
+    teamName: 'Ferrari',
+    logoColor: 'from-[#EF1A2D] to-black', // Ferrari Red
+    borderColor: 'border-[#EF1A2D]',
+    textColor: 'text-[#EF1A2D]',
+    drivers: [
+      {
+        id: 'schumacher_2004',
+        name: 'Michael Schumacher',
+        country: 'Alemanha 🇩🇪',
+        titles: 7,
+        wins: 91,
+        podiums: 155,
+        poles: 68,
+        rating_geral: 99,
+        pace: 99,
+        consistency: 99,
+        chuva: 99,
+        aggressiveness: 92,
+        reliability: 99,
+        description: 'Kaiser. Sete vezes campeão, ética de trabalho impecável e velocidade em ritmo de classificação constante.',
+      },
+      {
+        id: 'barrichello_2004',
+        name: 'Rubens Barrichello',
+        country: 'Brasil 🇧🇷',
+        titles: 0,
+        wins: 11,
+        podiums: 68,
+        poles: 14,
+        rating_geral: 90,
+        pace: 89,
+        consistency: 91,
+        chuva: 94,
+        aggressiveness: 80,
+        reliability: 93,
+        description: 'Trabalho de equipe brilhante, pilotagem extremamente técnica e exímio mestre na chuva.',
+      }
+    ],
+    boss: {
+      id: 'jean_todt_2004',
+      name: 'Jean Todt',
+      country: 'França 🇫🇷',
+      rating_geral: 98,
+      leadership: 99,
+      pressure_handling: 98,
+      prestige: 99,
+      description: 'Líder supremo da era mais vitoriosa da Ferrari. Blindou Maranello contra pressões externas.',
+    },
+    chassis: {
+      id: 'f2004',
+      name: 'Ferrari F2004',
+      engine: 'Ferrari 053 V10 Tipo 3.0',
+      rating_geral: 99,
+      top_speed: 100,
+      aerodynamics: 98,
+      conducao: 99,
+      reliability: 100,
+      description: 'A joia do V10 gritador. Quebrou recordes de pista de forma assustadora e impecável confiabilidade.',
+    },
+    strategist: {
+      id: 'ross_brawn_2004',
+      name: 'Ross Brawn',
+      rating_geral: 99,
+      calculated_risk: 99,
+      pit_tactics: 100,
+      reactivity: 98,
+      description: 'O maior estrategista da F1. Capaz de mudar rotas no meio da prova para ganhar corridas de surpresa.',
+    },
+    engineer: {
+      id: 'rory_byrne_2004',
+      name: 'Rory Byrne',
+      rating_geral: 98,
+      aerodynamics: 98,
+      innovation: 97,
+      weight_saving: 98,
+      description: 'Gênio sul-africano do design. Elaborou carros brilhantes e perfeitamente equilibrados em aderência.',
+    }
+  },
+  {
+    season: 2023,
+    teamId: 'redbull_2023',
+    teamName: 'Red Bull Racing',
+    logoColor: 'from-[#0600EF] to-[#FFCC00]', // Red Bull navy & yellow
+    borderColor: 'border-[#0600EF]',
+    textColor: 'text-[#0600EF]',
+    drivers: [
+      {
+        id: 'verstappen_2023',
+        name: 'Max Verstappen',
+        country: 'Holanda 🇳🇱',
+        titles: 3,
+        wins: 62,
+        podiums: 106,
+        poles: 40,
+        rating_geral: 99,
+        pace: 100,
+        consistency: 99,
+        chuva: 98,
+        aggressiveness: 94,
+        reliability: 98,
+        description: 'Fria precisão matemática sob pressão. Ganhou 19 de 22 corridas em 2023 com foco absoluto.',
+      },
+      {
+        id: 'perez_2023',
+        name: 'Sergio Pérez',
+        country: 'México 🇲🇽',
+        titles: 0,
+        wins: 6,
+        podiums: 39,
+        poles: 3,
+        rating_geral: 85,
+        pace: 84,
+        consistency: 82,
+        chuva: 88,
+        aggressiveness: 87,
+        reliability: 88,
+        description: 'Rei das pistas de rua e excelente protetor de pneus. Apoio estratégico perfeito em pistas quentes.',
+      }
+    ],
+    boss: {
+      id: 'christian_horner_2023',
+      name: 'Christian Horner',
+      country: 'Reino Unido 🇬🇧',
+      rating_geral: 94,
+      leadership: 95,
+      pressure_handling: 90,
+      prestige: 93,
+      description: 'Líder focado em defender sua equipe a todo custo e mestre em rivalidades políticas de paddock.',
+    },
+    chassis: {
+      id: 'rb19_2023',
+      name: 'Red Bull RB19',
+      engine: 'Honda-RBPT V6 Turbo híbrido',
+      rating_geral: 99,
+      top_speed: 100,
+      aerodynamics: 100,
+      conducao: 98,
+      reliability: 99,
+      description: 'Uma eficiência aerodinâmica inacreditável com o DRS mais poderoso do grids modernos.',
+    },
+    strategist: {
+      id: 'hannah_schmitz_2023',
+      name: 'Hannah Schmitz',
+      rating_geral: 98,
+      calculated_risk: 98,
+      pit_tactics: 99,
+      reactivity: 99,
+      description: 'Diretora de estratégia com decisões audaciosas e certeiras, mudando o rumo do campeonato.',
+    },
+    engineer: {
+      id: 'adrian_newey_2023',
+      name: 'Adrian Newey',
+      rating_geral: 99,
+      aerodynamics: 100,
+      innovation: 99,
+      weight_saving: 98,
+      description: 'Gênio indiscutível de layout de fluxo de ar. O engenheiro mais vitorioso da história da F1.',
+    }
+  },
+  {
+    season: 1992,
+    teamId: 'williams_1992',
+    teamName: 'Williams',
+    logoColor: 'from-[#002B49] to-[#FFCC00]', // Old school williams blue/yellow
+    borderColor: 'border-[#002B49]',
+    textColor: 'text-[#002B49]',
+    drivers: [
+      {
+        id: 'mansell_1992',
+        name: 'Nigel Mansell',
+        country: 'Reino Unido 🇬🇧',
+        titles: 1,
+        wins: 31,
+        podiums: 59,
+        poles: 32,
+        rating_geral: 95,
+        pace: 96,
+        consistency: 90,
+        chuva: 91,
+        aggressiveness: 97,
+        reliability: 88,
+        description: 'O Leão. Determinação física impressionante, estilo de agressividade insana e força nas curvas rápidas.',
+      },
+      {
+        id: 'patrese_1992',
+        name: 'Riccardo Patrese',
+        country: 'Itália 🇮🇹',
+        titles: 0,
+        wins: 6,
+        podiums: 37,
+        poles: 8,
+        rating_geral: 87,
+        pace: 86,
+        consistency: 89,
+        chuva: 85,
+        aggressiveness: 81,
+        reliability: 90,
+        description: 'Piloto confiável de equipe com experiência maciça e pilotagem limpa e conservadora.',
+      }
+    ],
+    boss: {
+      id: 'frank_williams_1992',
+      name: 'Frank Williams',
+      country: 'Reino Unido 🇬🇧',
+      rating_geral: 96,
+      leadership: 98,
+      pressure_handling: 97,
+      prestige: 98,
+      description: '毅 Lenda pura de superação física e determinação. Construiu um império privado a partir de garagem.',
+    },
+    chassis: {
+      id: 'fw14b_1992',
+      name: 'Williams FW14B',
+      engine: 'Renault 3.5 V10',
+      rating_geral: 98,
+      top_speed: 95,
+      aerodynamics: 99,
+      conducao: 97,
+      reliability: 89,
+      description: 'O computador sobre rodas. Suspensão ativa, controle de tração pioneiro e câmbio semiautomático.',
+    },
+    strategist: {
+      id: 'david_brown_1992',
+      name: 'David Brown',
+      rating_geral: 88,
+      calculated_risk: 86,
+      pit_tactics: 89,
+      reactivity: 87,
+      description: 'Calmo engenheiro de pista, ajudante fundamental da agressividade tática do Mansell.',
+    },
+    engineer: {
+      id: 'adrian_newey_1992',
+      name: 'Adrian Newey',
+      rating_geral: 99,
+      aerodynamics: 100,
+      innovation: 99,
+      weight_saving: 97,
+      description: 'Em sua juventude, já desenhava canais aerodinâmicos impensáveis desafiando a gravidade da pista.',
+    }
+  },
+  {
+    season: 2021,
+    teamId: 'mercedes_2021',
+    teamName: 'Mercedes-AMG',
+    logoColor: 'from-[#00A19B] to-black', // Petronas Teal
+    borderColor: 'border-[#00A19B]',
+    textColor: 'text-[#00A19B]',
+    drivers: [
+      {
+        id: 'hamilton_2021',
+        name: 'Lewis Hamilton',
+        country: 'Reino Unido 🇬🇧',
+        titles: 7,
+        wins: 105,
+        podiums: 201,
+        poles: 104,
+        rating_geral: 98,
+        pace: 99,
+        consistency: 98,
+        chuva: 98,
+        aggressiveness: 89,
+        reliability: 98,
+        description: 'O maior vencedor em pole positions, pódios e vitórias da história da Fórmula 1.',
+      },
+      {
+        id: 'bottas_2021',
+        name: 'Valtteri Bottas',
+        country: 'Finlândia 🇫🇮',
+        titles: 0,
+        wins: 10,
+        podiums: 67,
+        poles: 20,
+        rating_geral: 87,
+        pace: 90,
+        consistency: 85,
+        chuva: 75,
+        aggressiveness: 76,
+        reliability: 94,
+        description: 'Velocidade avassaladora nas voltas rápidas de classificação e companheiro de equipe perfeito.',
+      }
+    ],
+    boss: {
+      id: 'toto_wolff_2021',
+      name: 'Toto Wolff',
+      country: 'Áustria 🇦🇹',
+      rating_geral: 95,
+      leadership: 97,
+      pressure_handling: 90,
+      prestige: 96,
+      description: 'Líder focado em eficiência empresarial impecável e detentor de múltiplos recordes industriais.',
+    },
+    chassis: {
+      id: 'w12_2021',
+      name: 'Mercedes-AMG W12',
+      engine: 'Mercedes V6 Turbo Hybrid',
+      rating_geral: 97,
+      top_speed: 99,
+      aerodynamics: 97,
+      conducao: 96,
+      reliability: 97,
+      description: 'Estabilidade insuperável em curvas longas com a unidade de potência mais refinada da era híbrida.',
+    },
+    strategist: {
+      id: 'james_vowles_2021',
+      name: 'James Vowles',
+      rating_geral: 94,
+      calculated_risk: 92,
+      pit_tactics: 95,
+      reactivity: 94,
+      description: '"Valtteri, it\'s James". Comunicação cirúrgica, análise lógica de ritmo sem distrações.',
+    },
+    engineer: {
+      id: 'james_allison_2021',
+      name: 'James Allison',
+      rating_geral: 95,
+      aerodynamics: 96,
+      innovation: 95,
+      weight_saving: 94,
+      description: 'Diretor técnico magistral em traduzir complicadas equações físicas em conforto na pilotagem.',
+    }
+  },
+  {
+    season: 2005,
+    teamId: 'renault_2005',
+    teamName: 'Renault F1 Team',
+    logoColor: 'from-[#FFCC00] to-[#04015E]', // Mild Seven Yellow-Blue
+    borderColor: 'border-[#FFCC00]',
+    textColor: 'text-[#FFCC00]',
+    drivers: [
+      {
+        id: 'alonso_2005',
+        name: 'Fernando Alonso',
+        country: 'Espanha 🇪🇸',
+        titles: 2,
+        wins: 32,
+        podiums: 106,
+        poles: 22,
+        rating_geral: 96,
+        pace: 96,
+        consistency: 98,
+        chuva: 94,
+        aggressiveness: 92,
+        reliability: 97,
+        description: 'Estilo agressivo único, reflexos animalescos e inteligência de leitura de corrida inigualável.',
+      },
+      {
+        id: 'fisichella_2005',
+        name: 'Giancarlo Fisichella',
+        country: 'Itália 🇮🇹',
+        titles: 0,
+        wins: 3,
+        podiums: 19,
+        poles: 4,
+        rating_geral: 85,
+        pace: 84,
+        consistency: 85,
+        chuva: 88,
+        aggressiveness: 80,
+        reliability: 88,
+        description: 'Vencedor experiente de corridas clássicas com excelente ginga mecânica e bom coração.',
+      }
+    ],
+    boss: {
+      id: 'flavio_briatore_2005',
+      name: 'Flavio Briatore',
+      country: 'Itália 🇮🇹',
+      rating_geral: 90,
+      leadership: 92,
+      pressure_handling: 86,
+      prestige: 90,
+      description: 'Personagem extravagante, foca em extrair o máximo do talento de seus jovens prodígios.',
+    },
+    chassis: {
+      id: 'r25_2005',
+      name: 'Renault R25',
+      engine: 'Renault RS25 V10',
+      rating_geral: 94,
+      top_speed: 93,
+      aerodynamics: 95,
+      conducao: 97,
+      reliability: 95,
+      description: 'Excelente distribuição dinâmica mecânica e suspensão dianteira inovadora anti-bumping.',
+    },
+    strategist: {
+      id: 'pat_symonds_2005',
+      name: 'Pat Symonds',
+      rating_geral: 92,
+      calculated_risk: 93,
+      pit_tactics: 91,
+      reactivity: 92,
+      description: 'Estrategista de corridas histórico com visão em usar pneus macios no instante perfeito.',
+    },
+    engineer: {
+      id: 'bob_bell_2005',
+      name: 'Bob Bell',
+      rating_geral: 90,
+      aerodynamics: 90,
+      innovation: 92,
+      weight_saving: 89,
+      description: 'Criou os amortecedores de massa (mass damper) revolucionários no meio da suspensão de 2005.',
+    }
+  },
+  {
+    season: 2009,
+    teamId: 'brawn_2009',
+    teamName: 'Brawn GP',
+    logoColor: 'from-[#B4F000] to-white', // Neon Yellow/White
+    borderColor: 'border-[#B4F000]',
+    textColor: 'text-[#B4F000]',
+    drivers: [
+      {
+        id: 'button_2009',
+        name: 'Jenson Button',
+        country: 'Reino Unido 🇬🇧',
+        titles: 1,
+        wins: 15,
+        podiums: 50,
+        poles: 8,
+        rating_geral: 92,
+        pace: 91,
+        consistency: 96,
+        chuva: 98,
+        aggressiveness: 80,
+        reliability: 96,
+        description: 'Suavidade máxima no volante. Gênio de decisões cruciais para troca rápidas sob tempo incerto.',
+      },
+      {
+        id: 'rubinho_2009',
+        name: 'Rubens Barrichello',
+        country: 'Brasil 🇧🇷',
+        titles: 0,
+        wins: 11,
+        podiums: 68,
+        poles: 14,
+        rating_geral: 89,
+        pace: 88,
+        consistency: 90,
+        chuva: 92,
+        aggressiveness: 81,
+        reliability: 91,
+        description: 'Toda sua experiência moldou o acerto fino e feedback preciso da equipe de conto de fadas.',
+      }
+    ],
+    boss: {
+      id: 'ross_brawn_2009',
+      name: 'Ross Brawn',
+      country: 'Reino Unido 🇬🇧',
+      rating_geral: 98,
+      leadership: 99,
+      pressure_handling: 98,
+      prestige: 99,
+      description: 'Comprou a falida equipe Honda por 1 libra e construiu o conto de fadas campeão mais belo do esporte.',
+    },
+    chassis: {
+      id: 'bgp001_2009',
+      name: 'Brawn BGP 001',
+      engine: 'Mercedes V8',
+      rating_geral: 93,
+      top_speed: 95,
+      aerodynamics: 94,
+      conducao: 96,
+      reliability: 94,
+      description: 'Contém o revolucionário e polêmico "difusor duplo", gerando pressão gravitacional enorme nas retas.',
+    },
+    strategist: {
+      id: 'james_vowles_2009',
+      name: 'James Vowles',
+      rating_geral: 92,
+      calculated_risk: 94,
+      pit_tactics: 91,
+      reactivity: 93,
+      description: 'Gerenciou recursos táticos extremamente escassos na equipe independente sem nenhum erro de piloto.',
+    },
+    engineer: {
+      id: 'jorg_zander_2009',
+      name: 'Jörg Zander',
+      rating_geral: 89,
+      aerodynamics: 88,
+      innovation: 94,
+      weight_saving: 91,
+      description: 'Adaptou um motor Mercedes no chassi que havia sido desenhado para a Honda em tempo recorde.',
+    }
+  },
+  {
+    season: 2012,
+    teamId: 'ferrari_2012',
+    teamName: 'Ferrari Class',
+    logoColor: 'from-[#C2111A] to-yellow-500', // Ferrari Red dark-yellow
+    borderColor: 'border-[#C2111A]',
+    textColor: 'text-[#C2111A]',
+    drivers: [
+      {
+        id: 'alonso_2012',
+        name: 'Fernando Alonso',
+        country: 'Espanha 🇪🇸',
+        titles: 2,
+        wins: 32,
+        podiums: 106,
+        poles: 22,
+        rating_geral: 98,
+        pace: 97,
+        consistency: 100,
+        chuva: 98,
+        aggressiveness: 93,
+        reliability: 98,
+        description: 'Sua lendária temporada de 2012. Extraiu cada centésimo de segundo de um carro problemático com raça pura.',
+      },
+      {
+        id: 'massa_2012',
+        name: 'Felipe Massa',
+        country: 'Brasil 🇧🇷',
+        titles: 0,
+        wins: 11,
+        podiums: 41,
+        poles: 16,
+        rating_geral: 86,
+        pace: 86,
+        consistency: 85,
+        chuva: 80,
+        aggressiveness: 87,
+        reliability: 89,
+        description: 'Vencedor leal altamente aguerrido, rápido em circuitos rápidos e de grande resiliência mental.',
+      }
+    ],
+    boss: {
+      id: 'stefano_domenicali_2012',
+      name: 'Stefano Domenicali',
+      country: 'Itália 🇮🇹',
+      rating_geral: 87,
+      leadership: 88,
+      pressure_handling: 85,
+      prestige: 88,
+      description: 'Liderança amigável e protetora dos seus pilotos, manteve-se firme na guerra tática contra Red Bull.',
+    },
+    chassis: {
+      id: 'f2012',
+      name: 'Ferrari F2012',
+      engine: 'Ferrari Tipo 056 V8',
+      rating_geral: 88,
+      top_speed: 92,
+      aerodynamics: 85,
+      conducao: 89,
+      reliability: 99,
+      description: 'Aerodinamicamente fraco nas primeiras corridas, mas extremamente confiável e sólido na chuva.',
+    },
+    strategist: {
+      id: 'pat_fry_2012',
+      name: 'Pat Fry',
+      rating_geral: 89,
+      calculated_risk: 88,
+      pit_tactics: 90,
+      reactivity: 89,
+      description: 'Estratégia sólida com foco em compensar as fraquezas de velocidade do qualy de sábado nas largadas de domingo.',
+    },
+    engineer: {
+      id: 'nikolas_tombazis_2012',
+      name: 'Nikolas Tombazis',
+      rating_geral: 86,
+      aerodynamics: 85,
+      innovation: 87,
+      weight_saving: 88,
+      description: 'Abordagem focada em extrair ar da asa dianteira bico "feioso" em degrau para gerar aderência mecânica.',
+    }
+  },
+  {
+    season: 2020,
+    teamId: 'ferrari_2020_meme',
+    teamName: 'Ferrari (Crise 2020)',
+    logoColor: 'from-[#5A0A10] to-[#FFCC00]', // Dark burgundy (crises)
+    borderColor: 'border-[#5a0a10]',
+    textColor: 'text-[#5a0a10]',
+    drivers: [
+      {
+        id: 'leclerc_2020',
+        name: 'Charles Leclerc',
+        country: 'Mônaco 🇲🇨',
+        titles: 0,
+        wins: 7,
+        podiums: 38,
+        poles: 26,
+        rating_geral: 91,
+        pace: 93,
+        consistency: 88,
+        chuva: 85,
+        aggressiveness: 91,
+        reliability: 84,
+        description: 'Tocou o terror nas pistas tentando superar canhestramente os severos limites de velocidade do carro.',
+      },
+      {
+        id: 'vettel_2020',
+        name: 'Sebastian Vettel',
+        country: 'Alemanha 🇩🇪',
+        titles: 4,
+        wins: 53,
+        podiums: 122,
+        poles: 57,
+        rating_geral: 86,
+        pace: 84,
+        consistency: 83,
+        chuva: 88,
+        aggressiveness: 84,
+        reliability: 84,
+        description: 'Quatro vezes campeão mundial, mas passando pelo desgaste psicológico terrível da sua saída italiana.',
+      }
+    ],
+    boss: {
+      id: 'mattia_binotto_2020',
+      name: 'Mattia Binotto',
+      country: 'Suíça 🇨🇭 / Itália',
+      rating_geral: 72,
+      leadership: 68,
+      pressure_handling: 65,
+      prestige: 75,
+      description: 'Líder com postura dócil, mas que sofreu enorme pressão estratégica e política sob os motores limitados.',
+    },
+    chassis: {
+      id: 'sf1000_2020',
+      name: 'Ferrari SF1000',
+      engine: 'Ferrari V6 restrito por acordo secreto',
+      rating_geral: 75,
+      top_speed: 70, // Extremely slow in straight lines
+      aerodynamics: 78,
+      conducao: 74,
+      reliability: 82,
+      description: 'O terrível carro do acordo secreto de fluxo de combustível. Apelidado de trator de arrasto nas retas.',
+    },
+    strategist: {
+      id: 'inaki_rueda_2020',
+      name: 'Inaki Rueda (Meme)',
+      rating_geral: 65,
+      calculated_risk: 60,
+      pit_tactics: 68,
+      reactivity: 55,
+      description: 'Lendário no mundo da zoeira. Chamadas confusas que resultaram em pitstops bizarros e pneus errados.',
+    },
+    engineer: {
+      id: 'enrico_cardile_2020',
+      name: 'Enrico Cardile',
+      rating_geral: 80,
+      aerodynamics: 81,
+      innovation: 75,
+      weight_saving: 81,
+      description: 'Trabalho pesado com asas traseiras gigantescas para tentar segurar a rabeada crônica aerodinâmica.',
+    }
+  }
+];
+
+export function getRandomComboExcept(excludeIds: string[]): TeamCombination {
+  const avaliable = SEASONS_TEAMS.filter(item => !excludeIds.includes(item.teamId));
+  const pool = avaliable.length > 0 ? avaliable : SEASONS_TEAMS;
+  const randomIndex = Math.floor(Math.random() * pool.length);
+  return pool[randomIndex];
+}
+
+export function evaluateQualityRank(avgRating: number): {
+  rank: 'Bronze' | 'Prata' | 'Ouro' | 'Lendária';
+  color: string;
+} {
+  if (avgRating >= 96) return { rank: 'Lendária', color: 'text-amber-400 border-amber-400 bg-amber-950/40' };
+  if (avgRating >= 91) return { rank: 'Ouro', color: 'text-yellow-500 border-yellow-500 bg-yellow-950/20' };
+  if (avgRating >= 84) return { rank: 'Prata', color: 'text-slate-300 border-slate-300 bg-slate-900/40' };
+  return { rank: 'Bronze', color: 'text-orange-500 border-orange-500 bg-orange-950/20' };
+}
+
+export function detectCombos(filledSlots: Record<string, any>): { name: string; description: string; bonusValue: number; icon: string }[] {
+  const combos: { name: string; description: string; bonusValue: number; icon: string }[] = [];
+  const drivers: any[] = [
+    filledSlots['driver_1'],
+    filledSlots['driver_2'],
+    filledSlots['reserve_1'],
+    filledSlots['reserve_2'],
+    filledSlots['wet_specialist'],
+    filledSlots['legacy_wildcard']
+  ].filter(Boolean);
+
+  const chassis = filledSlots['chassis'];
+  const boss = filledSlots['team_boss'];
+  const strategist = filledSlots['strategist'];
+  const engineer = filledSlots['engineer'];
+
+  // Check for Ayrton Senna + McLaren
+  const hasSenna = drivers.some(d => d.name.includes('Senna'));
+  const hasMcLarenChassis = chassis && chassis.name.includes('McLaren');
+  if (hasSenna && hasMcLarenChassis) {
+    combos.push({
+      name: 'Senna & McLaren',
+      description: 'O casamento perfeito que dominou o planeta em 1988. Sinergia espiritual fantástica (+5 Pace, +3 Confiabilidade).',
+      bonusValue: 8,
+      icon: 'sparkleCount'
+    });
+  }
+
+  // Michael Schumacher + Ferrari Chassis or Jean Todt
+  const hasSchumy = drivers.some(d => d.name.includes('Schumacher'));
+  const hasFerrariChassis = chassis && chassis.name.includes('Ferrari');
+  const hasJeanTodt = boss && boss.name.includes('Jean Todt');
+  if (hasSchumy && (hasFerrariChassis || hasJeanTodt)) {
+    combos.push({
+      name: 'Era de Ouro Maranello',
+      description: 'Schumacher e o comando estratégico italiano. A inabalável força do rolo compressor (+6 Consistência, +4 Confiabilidade).',
+      bonusValue: 10,
+      icon: 'flag'
+    });
+  }
+
+  // Adrian Newey + Williams/Red Bull Chassis
+  const hasNewey = engineer && engineer.name.includes('Adrian Newey');
+  const hasChassisForNewey = chassis && (chassis.name.includes('Red Bull') || chassis.name.includes('Williams'));
+  if (hasNewey && hasChassisForNewey) {
+    combos.push({
+      name: 'Gênio Aerodinâmico',
+      description: 'Adrian Newey desenhando um foguete que realmente decola no túnel de vento (+8 Aerodinâmica).',
+      bonusValue: 9,
+      icon: 'wind'
+    });
+  }
+
+  // Lewis Hamilton + Mercedes Chassis
+  const hasHamilton = drivers.some(d => d.name.includes('Hamilton'));
+  const hasMercedesChassis = chassis && chassis.name.includes('Mercedes');
+  if (hasHamilton && hasMercedesChassis) {
+    combos.push({
+      name: 'Sexteto Prateado',
+      description: 'A parceria Hamilton-Mercedes ativa o modo martelo. Ritmo avassalador em qualquer circuito (+5 Pace).',
+      bonusValue: 7,
+      icon: 'zap'
+    });
+  }
+
+  // Hannah Schmitz + Red Bull Chassis/Boss Horner
+  const hasHannah = strategist && strategist.name.includes('Hannah Schmitz');
+  const hasRedBullHornerOrCar = (chassis && chassis.name.includes('Red Bull')) || (boss && boss.name.includes('Horner'));
+  if (hasHannah && hasRedBullHornerOrCar) {
+    combos.push({
+      name: 'Estratégia Imparável',
+      description: 'Hannah Schmitz orquestrando pit stops na milésima de segundo para desestabilizar os adversários (+8 Estratégia).',
+      bonusValue: 8,
+      icon: 'brain'
+    });
+  }
+
+  // Double Brazilian drivers inside team
+  const brazilians = drivers.filter(d => d.country.includes('Brasil')).length;
+  if (brazilians >= 2) {
+    combos.push({
+      name: 'Garra Brasileira 🇧🇷',
+      description: 'Dois pilotos do país do samba. Samba e agressividade pura nas curvas molhadas (+6 Chuva para o time!).',
+      bonusValue: 6,
+      icon: 'heart'
+    });
+  }
+
+  // High aggressiveness drivers conflict
+  const aggLevel = drivers.reduce((acc, d) => acc + (d.aggressiveness || 80), 0) / (drivers.length || 1);
+  if (aggLevel > 92) {
+    combos.push({
+      name: 'Box Explosivo 💥',
+      description: 'Muitos elementos altamente agressivos! Risco sério de batidas entre companheiros nos boxes (-2 Confiabilidade).',
+      bonusValue: -4,
+      icon: 'flame'
+    });
+  }
+
+  // Binotto / Inaki Rueda drama
+  const hasBinotto = boss && boss.name.includes('Binotto');
+  const hasRueda = strategist && strategist.name.includes('Inaki');
+  if (hasBinotto && hasRueda) {
+    combos.push({
+      name: 'Desastre Tático',
+      description: 'O temível combo de pneus duros em dia de tempestade na Hungria. Deus nos ajude (-10 Estratégia).',
+      bonusValue: -12,
+      icon: 'alert-triangle'
+    });
+  }
+
+  return combos;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "7a0 Formula 1",
+  "description": "Um jogo viciante de simulador e recrutamento de F1 inspirado no 7a0. Sorteie equipes e temporadas clássicas, monte sua escuderia ideal e dispute o campeonato mundial!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

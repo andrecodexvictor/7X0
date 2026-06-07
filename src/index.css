@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #050505; /* Pitch Black background */
+  color: #E0E0E0; /* Bright modern grey */
+  overflow-x: hidden;
+}
+
+/* Custom scrollbars for telemetry feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF1801;
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 15px rgba(255, 24, 1, 0.6);
+  }
+  50% {
+    opacity: .7;
+    transform: scale(1.05);
+    box-shadow: 0 0 5px rgba(255, 24, 1, 0.2);
+  }
+}
+
+.pulse-led-red {
+  animation: pulse-red 2s infinite ease-in-out;
+}
+
