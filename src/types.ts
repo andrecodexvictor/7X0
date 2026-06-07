@@ -75,7 +75,7 @@ export interface GameSlot {
   filledWith: any | null; // Selected entity
 }
 
-export type DifficultyMode = 'normal' | 'hard'; // Hard hides numeric ratings
+export type DifficultyMode = 'normal' | 'hard' | 'underdog'; // Hard hides numeric ratings, Underdog mode uses worse teams with buffs
 
 export interface TeamCombination {
   season: number;
@@ -89,6 +89,7 @@ export interface TeamCombination {
   chassis: Chassis;
   strategist: Strategist;
   engineer: Engineer;
+  isWorst?: boolean;
 }
 
 export interface Race {

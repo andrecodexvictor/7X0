@@ -54,6 +54,52 @@ import {
   Legend
 } from 'recharts';
 
+// Active Buff Cards declared outside Component
+const BUFF_CARDS = [
+  {
+    id: 'drs',
+    name: '🚀 DRS Infinito',
+    description: 'Abre a asa móvel nas retas e curvas amplas! Seus dois pilotos ganham +12 posições médias ou sobem para o topo do grid.',
+    color: 'border-cyan-500/80 bg-cyan-950/40 text-cyan-400 font-bold shadow-[0_0_15px_rgba(6,182,212,0.15)]',
+    icon: 'Zap',
+  },
+  {
+    id: 'party_mode',
+    name: '🔥 Modo Festa no Motor',
+    description: 'Bota o motor para queimar no limite supremo! Seu Piloto Principal 1 é jogado diretamente para a P1 nesta rodada.',
+    color: 'border-purple-500/80 bg-purple-950/40 text-purple-400 font-bold shadow-[0_0_15px_rgba(168,85,247,0.15)]',
+    icon: 'Flame',
+  },
+  {
+    id: 'shield',
+    name: '🛡️ Mureta Blindada',
+    description: 'Reverte qualquer colisão ou falha mecânica! Desfaz DNFs de seus pilotos e os coloca em uma posição segura na disputa de pontos.',
+    color: 'border-emerald-500/80 bg-emerald-950/40 text-emerald-400 font-bold shadow-[0_0_15px_rgba(16,185,129,0.15)]',
+    icon: 'Shield',
+  },
+  {
+    id: 'stop_iceman',
+    name: '🍦 Sorvete Strategic Masterclass',
+    description: 'Parada perfeita e pit stop épico de 1.8 segundos sob safety-car. Garante pódio duplo para sua escuderia.',
+    color: 'border-amber-500/80 bg-amber-950/40 text-amber-400 font-bold shadow-[0_0_15px_rgba(245,158,11,0.15)]',
+    icon: 'Award',
+  },
+  {
+    id: 'forced_rain',
+    name: '🌧️ Dança da Chuva',
+    description: 'Sua equipe sabota a mureta adversária com previsão de tempestade tática. Seu especialista ou pilotos ganham vantagem total (+8 posições).',
+    color: 'border-blue-500/80 bg-blue-950/40 text-sky-400 font-bold shadow-[0_0_15px_rgba(59,130,246,0.15)]',
+    icon: 'CloudRain',
+  },
+  {
+    id: 'multi21',
+    name: '🏆 Ordem "Multi 31" Reversa',
+    description: 'Inverte agressivamente as posições de equipe, fazendo o seu Piloto 2 (Segundo Titular) assumir a P1 e vencer a prova!',
+    color: 'border-pink-500/80 bg-pink-950/40 text-pink-400 font-bold shadow-[0_0_15px_rgba(236,72,153,0.15)]',
+    icon: 'Sparkles',
+  }
+];
+
 // Icon Map helper to resolve lucide icons
 const IconMap: Record<string, React.ComponentType<any>> = {
   User,
@@ -110,7 +156,7 @@ interface SavedSession {
 
 export default function App() {
   // Navigation & States
-  const [difficultyMode, setDifficultyMode] = useState<'normal' | 'hard'>('normal');
+  const [difficultyMode, setDifficultyMode] = useState<'normal' | 'hard' | 'underdog'>('normal');
   const [activeSlotIndex, setActiveSlotIndex] = useState<number>(0);
   const [slots, setSlots] = useState<Record<string, any>>({});
   const [jokerAvailable, setJokerAvailable] = useState<boolean>(true);
@@ -118,6 +164,12 @@ export default function App() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [rulesModalOpen, setRulesModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Buff cards states
+  const [availableCards, setAvailableCards] = useState<any[]>([]);
+  const [selectedCardToUse, setSelectedCardToUse] = useState<any | null>(null);
+  const [activeBuffModals, setActiveBuffModals] = useState<boolean>(false);
+  const [buffHistory, setBuffHistory] = useState<string[]>([]);
 
   const [gameMode, setGameMode] = useState<'home' | 'draft' | 'simulating' | 'results' | 'duelo'>('home');
   const [duelPreviousMode, setDuelPreviousMode] = useState<'home' | 'results'>('home');
@@ -613,7 +665,7 @@ export default function App() {
   };
 
   // Start new draft session
-  const handleStartGame = (mode: 'normal' | 'hard') => {
+  const handleStartGame = (mode: 'normal' | 'hard' | 'underdog') => {
     setDifficultyMode(mode);
     setSlots({});
     setActiveSlotIndex(0);
@@ -621,7 +673,7 @@ export default function App() {
     setGameMode('draft');
     
     // Draw first combination
-    const rolled = getRandomComboExcept([]);
+    const rolled = getRandomComboExcept([], mode === 'underdog');
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[0], rolled, {});
     playBeep(440, 0.1);
@@ -922,7 +974,7 @@ export default function App() {
     setJokerAvailable(false);
     
     // Pick another random team
-    const rolled = getRandomComboExcept(activeCombo ? [activeCombo.teamId] : []);
+    const rolled = getRandomComboExcept(activeCombo ? [activeCombo.teamId] : [], difficultyMode === 'underdog');
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[activeSlotIndex], rolled, slots);
     
@@ -933,7 +985,7 @@ export default function App() {
   // Handle manual selection of slot index in sidebar to edit or recruit it
   const handleSelectSlotIndex = (idx: number) => {
     setActiveSlotIndex(idx);
-    const rolled = activeCombo || getRandomComboExcept([]);
+    const rolled = activeCombo || getRandomComboExcept([], difficultyMode === 'underdog');
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[idx], rolled, slots);
     playBeep(440, 0.05);
@@ -964,7 +1016,7 @@ export default function App() {
       if (nextIndex < GAME_SLOTS.length) {
         setActiveSlotIndex(nextIndex);
         // Roll next Season+Team combination
-        const rolled = getRandomComboExcept([]);
+        const rolled = getRandomComboExcept([], difficultyMode === 'underdog');
         setActiveCombo(rolled);
         generateCandidatesForSlot(GAME_SLOTS[nextIndex], rolled, newSlots);
       } else {
@@ -982,6 +1034,11 @@ export default function App() {
     setSimActiveRaceIdx(-1);
     setSimLightsCount(0);
     setSimRaceCompleted(false);
+
+    // Pick 3 random support cards
+    const shuffled = [...BUFF_CARDS].sort(() => 0.5 - Math.random());
+    setAvailableCards(shuffled.slice(0, 3));
+    setBuffHistory([]);
 
     // Compile result
     const results = runChampionshipSimulation(finalSlots, difficultyMode);
@@ -1023,6 +1080,223 @@ export default function App() {
         }, 800);
       }
     }, 1800); // 1.8 seconds per grand prix to view
+  };
+
+  // Recalculate standings on-the-fly when support/buff cards are applied
+  const recalculateStandingsFromRaces = (raceResults: any[]) => {
+    const pointsList = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+    const driverStandingsMap: Record<string, { points: number; wins: number; podiums: number; dnfCount: number; team: string; color: string; isUser: boolean }> = {};
+    const teamStandingsMap: Record<string, number> = {};
+
+    // Get all initial drivers and teams from the first race to initialize the maps
+    if (raceResults.length > 0) {
+      raceResults[0].positions.forEach((p: any) => {
+        driverStandingsMap[p.driver] = {
+          points: 0,
+          wins: 0,
+          podiums: 0,
+          dnfCount: 0,
+          team: p.team,
+          color: p.color,
+          isUser: p.team === 'Seu Time',
+        };
+        teamStandingsMap[p.team] = 0;
+      });
+    }
+
+    // Tally points across results
+    raceResults.forEach((raceRes) => {
+      raceRes.positions.forEach((p: any, idx: number) => {
+        const entry = driverStandingsMap[p.driver];
+        if (entry) {
+          if (p.dnf) {
+            entry.dnfCount += 1;
+            // No points scored
+            p.points = 0;
+          } else {
+            const pts = idx < 10 ? pointsList[idx] : 0;
+            p.points = pts; // persist
+            entry.points += pts;
+            teamStandingsMap[p.team] = (teamStandingsMap[p.team] || 0) + pts;
+            
+            if (idx === 0) entry.wins += 1;
+            if (idx < 3) entry.podiums += 1;
+          }
+        }
+      });
+    });
+
+    const driverStandings = Object.keys(driverStandingsMap).map(drvName => ({
+      driver: drvName,
+      ...driverStandingsMap[drvName],
+    })).sort((a, b) => b.points - a.points);
+
+    const teamStandings = Object.keys(teamStandingsMap).map(tName => {
+      const isU = tName === 'Seu Time';
+      const firstDrv = driverStandings.find(d => d.team === tName);
+      return {
+        team: tName,
+        points: teamStandingsMap[tName],
+        isUser: isU,
+        color: isU ? '#FF3E3E' : (firstDrv?.color || '#94A3B8'),
+      };
+    }).sort((a, b) => b.points - a.points);
+
+    return { driverStandings, teamStandings };
+  };
+
+  // Perform card buff activation
+  const handleApplyCard = (cardId: string) => {
+    if (!simulationResult || simActiveRaceIdx < 0) {
+      triggerToast('⚠️ Aguarde a largada ou selecione uma corrida ativa para aplicar o buff!');
+      return;
+    }
+
+    const currentGPEntity = CIRCUITS[simActiveRaceIdx];
+    if (!currentGPEntity) return;
+
+    // Deep clone simulationResult to avoid mutation errors
+    const cloned = JSON.parse(JSON.stringify(simulationResult));
+    const raceRes = cloned.raceResults[simActiveRaceIdx];
+    if (!raceRes) return;
+
+    let hasApplied = false;
+    let logMsg = '';
+
+    const userDriverEntries = raceRes.positions.filter((p: any) => p.team === 'Seu Time');
+    if (userDriverEntries.length === 0) {
+      triggerToast('⚠️ Nenhum piloto do seu time encontrado nesta corrida!');
+      return;
+    }
+
+    // Isolate competitor drivers
+    const others = raceRes.positions.filter((p: any) => p.team !== 'Seu Time');
+
+    if (cardId === 'drs') {
+      userDriverEntries.forEach((u: any) => {
+        u.dnf = false;
+        delete u.incident;
+        u.trackEffect = '🚀 DRS Infinito Ativado (P1/P2)';
+      });
+      raceRes.positions = [...userDriverEntries, ...others];
+      logMsg = `🚀 DRS Infinito: Dobradinha em P1 e P2 no ${currentGPEntity.name}!`;
+      hasApplied = true;
+
+    } else if (cardId === 'party_mode') {
+      const d1Name = slots['driver_1']?.name || 'Seu Piloto 1';
+      const d1Entry = raceRes.positions.find((p: any) => p.driver === d1Name);
+      if (d1Entry) {
+        d1Entry.dnf = false;
+        delete d1Entry.incident;
+        d1Entry.trackEffect = '🔥 Modo Festa no Motor (P1)';
+        const index = raceRes.positions.indexOf(d1Entry);
+        if (index !== -1) {
+          raceRes.positions.splice(index, 1);
+        }
+        raceRes.positions.unshift(d1Entry);
+        logMsg = `🔥 Modo Festa: ${d1Name} assume a P1 absoluta no ${currentGPEntity.name}!`;
+        hasApplied = true;
+      } else {
+        triggerToast('⚠️ Piloto Principal 1 não ativo nesta corrida.');
+      }
+
+    } else if (cardId === 'shield') {
+      let dnfRemoved = false;
+      userDriverEntries.forEach((u: any) => {
+        if (u.dnf) {
+          u.dnf = false;
+          delete u.incident;
+          u.trackEffect = '🛡️ Mureta Blindada: Desastre Evitado';
+          dnfRemoved = true;
+        }
+      });
+      
+      if (dnfRemoved) {
+        // Find normal drivers and locate user drivers back in safe scoring zones (P5, P6)
+        const rest = raceRes.positions.filter((p: any) => p.team !== 'Seu Time' || !p.dnf);
+        raceRes.positions = [
+          ...rest.slice(0, 4),
+          ...userDriverEntries,
+          ...rest.slice(4)
+        ];
+        logMsg = `🛡️ Mureta Blindada: Danos reparados. Retomamos para as posições de pontuação!`;
+      } else {
+        // General rating boost
+        userDriverEntries.forEach((u: any) => {
+          u.trackEffect = '🛡️ Chassi Reforçado (+4 posições)';
+        });
+        raceRes.positions = [...userDriverEntries, ...others];
+        logMsg = `🛡️ Mureta Blindada: Escuderia blindada voando baixo no asfalto.`;
+      }
+      hasApplied = true;
+
+    } else if (cardId === 'stop_iceman') {
+      // Double podium
+      userDriverEntries.forEach((u: any, uIdx: number) => {
+        u.dnf = false;
+        delete u.incident;
+        u.trackEffect = `🍦 Pit Stop Perfeito (${1.7 + uIdx * 0.1}s)`;
+      });
+      raceRes.positions = [...userDriverEntries, ...others];
+      logMsg = `🍦 Strategic Iceman: Pódio duplo com pitstop de elite no ${currentGPEntity.name}!`;
+      hasApplied = true;
+
+    } else if (cardId === 'forced_rain') {
+      userDriverEntries.forEach((u: any) => {
+        u.dnf = false;
+        delete u.incident;
+        u.trackEffect = '🌧️ Especialista de Chuva Ativo';
+      });
+      // Place in P1 and P2
+      raceRes.positions = [...userDriverEntries, ...others];
+      logMsg = `🌧️ Dança da Chuva: Temporal evocado estrategicamente! Dobrada no topo do asfalto molhado!`;
+      hasApplied = true;
+
+    } else if (cardId === 'multi21') {
+      const d2Name = slots['driver_2']?.name || 'Seu Piloto 2';
+      const d2Entry = raceRes.positions.find((p: any) => p.driver === d2Name);
+      if (d2Entry) {
+        d2Entry.dnf = false;
+        delete d2Entry.incident;
+        d2Entry.trackEffect = '🏆 Ordem de Mureta Multi-31 (P1)';
+        const index = raceRes.positions.indexOf(d2Entry);
+        if (index !== -1) {
+          raceRes.positions.splice(index, 1);
+        }
+        raceRes.positions.unshift(d2Entry);
+        logMsg = `📻 Multi-31 Reversa: Piloto Principal 2 ultrapassa na marra e fatura a vitória!`;
+        hasApplied = true;
+      } else {
+        triggerToast('⚠️ Piloto 2 não ativo nesta corrida.');
+      }
+    }
+
+    if (hasApplied) {
+      // Refresh podium field with proper object format expected by the app
+      raceRes.podium = raceRes.positions.slice(0, 3).map((p: any) => ({
+        driver: p.driver,
+        team: p.team,
+        color: p.color || '#94A3B8'
+      }));
+
+      // Recalculate whole standings
+      const recalculated = recalculateStandingsFromRaces(cloned.raceResults);
+      cloned.driverStandings = recalculated.driverStandings;
+      cloned.teamStandings = recalculated.teamStandings;
+
+      // Update narration feed
+      cloned.narrationHighlights.unshift(`⚡ [BUSTER] ${logMsg}`);
+
+      // Save!
+      setSimulationResult(cloned);
+      setAvailableCards(prev => prev.filter(c => c.id !== cardId));
+      setSelectedCardToUse(null);
+      setActiveBuffModals(false);
+      setBuffHistory(prev => [logMsg, ...prev]);
+
+      playBeep(987, 0.45);
+      triggerToast('🎉 Card de Buff ativado com sucesso para este GP!');
+    }
   };
 
   // Finished viewing simulation -> show result
@@ -1546,6 +1820,15 @@ Jogue agora em: ${window.location.href}`;
                 </button>
 
                 <button
+                  id="btn_start_underdog"
+                  onClick={() => handleStartGame('underdog')}
+                  className="bg-zinc-900 border border-amber-500/50 hover:border-amber-400 text-amber-300 hover:bg-amber-500/10 font-display font-bold px-6 py-4 rounded active:scale-95 transition-all text-base tracking-wider uppercase cursor-pointer flex-1 text-center min-w-[200px] hover:shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                >
+                  <Trophy className="h-4.5 w-4.5 mr-2 inline text-amber-400" />
+                  <span>MODO UNDERDOG</span>
+                </button>
+
+                <button
                   id="btn_goto_duelo_home"
                   onClick={() => {
                     setDuelPreviousMode('home');
@@ -1557,6 +1840,18 @@ Jogue agora em: ${window.location.href}`;
                   <Flame className="h-4.5 w-4.5 mr-2 inline text-[#FF1801]" />
                   <span>MODO DUELO</span>
                 </button>
+              </div>
+
+              {/* Informações dos Modos */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-xs font-sans text-neutral-400 max-w-3xl bg-neutral-900/30 p-4 rounded border border-neutral-800/60 leading-relaxed">
+                <div className="flex gap-2.5">
+                  <div className="text-amber-400 font-bold shrink-0">🐕 MODO UNDERDOG:</div>
+                  <div>Tente o impossível! Assuma as <strong className="text-amber-300">piores/mais lentas equipes históricas da F1</strong> e desafie o grid com sabedoria, usando cartas de Buff ativo em tempo real nas corridas!</div>
+                </div>
+                <div className="flex gap-2.5">
+                  <div className="text-neutral-300 font-bold shrink-0">🧠 MEMÓRIA:</div>
+                  <div>Para puristas extremos do esporte. Jogue sem dicas visuais de combos ou ratings calculados de pilotos de antemão e prove que você domina a história do grid!</div>
+                </div>
               </div>
 
               {/* Informação rápida de rodagem */}
@@ -1596,7 +1891,7 @@ Jogue agora em: ${window.location.href}`;
                     <div key={run.id} className="p-3 bg-[#151515] hover:bg-[#1C1C1C] border border-[#222] rounded flex justify-between items-center text-xs transition-colors">
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
-                          <span className="font-bold text-white text-sm">#0{index + 1} • {run.champion.split(' ')[0]}</span>
+                          <span className="font-bold text-white text-sm">#0{index + 1} • {(run.champion || 'Nenhum').split(' ')[0]}</span>
                         </div>
                         <span className="text-[10px] text-[#666] font-mono">Finalizado às {run.timestamp}</span>
                       </div>
@@ -2279,7 +2574,11 @@ Jogue agora em: ${window.location.href}`;
                           {isCompeted && winnerOfGp && (
                             <div className="text-[10px] text-green-400 font-mono flex items-center space-x-1">
                               <Trophy className="h-3 w-3 inline text-amber-500 shrink-0" />
-                              <span className="truncate">{winnerOfGp.driver.split(' ').pop() || winnerOfGp.driver}</span>
+                              <span className="truncate">
+                                {typeof winnerOfGp === 'string'
+                                  ? (winnerOfGp.split(' ').pop() || winnerOfGp)
+                                  : (winnerOfGp.driver ? (winnerOfGp.driver.split(' ').pop() || winnerOfGp.driver) : 'Nenhum')}
+                              </span>
                             </div>
                           )}
 
@@ -2304,6 +2603,92 @@ Jogue agora em: ${window.location.href}`;
                       style={{ width: `${((simActiveRaceIdx + 1) / CIRCUITS.length) * 100}%` }}
                     />
                   </div>
+                </div>
+
+                {/* 🛒 BARRA DE SUPORTE E BUFFS EM TEMPO REAL */}
+                <div className="border border-neutral-800 bg-neutral-950/60 p-5 rounded text-left mt-6 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-neutral-800 pb-3">
+                    <div>
+                      <h4 className="text-sm font-display font-medium text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                        <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
+                        Paddock Command: Cartas de Suporte
+                      </h4>
+                      <p className="text-[11px] text-neutral-400 font-sans mt-0.5">
+                        {simActiveRaceIdx >= 0 
+                          ? `Ative agora no GP corrente: ${CIRCUITS[simActiveRaceIdx]?.name}`
+                          : "Aguarde o início das etapas para injetar telemetria na corrida ativa!"}
+                      </p>
+                    </div>
+                    {difficultyMode === 'underdog' && (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-200 border border-amber-500/30 font-bold uppercase tracking-widest font-mono shrink-0">
+                        UNDERDOG ADVANTAGE 🐕
+                      </span>
+                    )}
+                  </div>
+
+                  {availableCards.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {availableCards.map((card) => {
+                        const IconComponent = IconMap[card.icon] || Zap;
+                        const isSimActive = simActiveRaceIdx >= 0 && !simRaceCompleted;
+                        return (
+                          <div
+                            key={card.id}
+                            className={`flex flex-col justify-between p-3.5 rounded border ${card.color} transition-all relative group overflow-hidden ${
+                              isSimActive 
+                                ? 'hover:scale-[1.02] hover:border-white/40 cursor-pointer shadow-lg' 
+                                : 'opacity-50 cursor-not-allowed'
+                            }`}
+                            onClick={() => {
+                              if (!isSimActive) {
+                                triggerToast('⚠️ Aguarde a largada das corridas para ativar os buffs!');
+                                return;
+                              }
+                              setSelectedCardToUse(card);
+                              setActiveBuffModals(true);
+                              playBeep(440, 0.1);
+                            }}
+                          >
+                            <div className="space-y-1.5 min-h-[70px]">
+                              <div className="flex justify-between items-start gap-1">
+                                <span className="font-display font-bold text-xs uppercase leading-tight tracking-wide">{card.name}</span>
+                                <IconComponent className="h-4 w-4 shrink-0 opacity-80" />
+                              </div>
+                              <p className="text-[10px] text-neutral-300 leading-normal font-sans">{card.description}</p>
+                            </div>
+
+                            <button
+                              disabled={!isSimActive}
+                              className={`w-full mt-3 py-1.5 text-[9px] font-mono rounded tracking-widest uppercase font-bold transition-all ${
+                                isSimActive 
+                                  ? 'bg-white/10 hover:bg-white text-white hover:text-black hover:shadow-md cursor-pointer' 
+                                  : 'bg-neutral-900 text-neutral-600'
+                              }`}
+                            >
+                              ATIVAR AGORA
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-neutral-500 bg-neutral-900/30 rounded border border-neutral-800/40">
+                      <p className="text-xs font-mono">⚠️ Todas as cartas de suporte foram consumidas neste campeonato!</p>
+                    </div>
+                  )}
+
+                  {/* Histórico Recente de Buffs Aplicados */}
+                  {buffHistory.length > 0 && (
+                    <div className="mt-3 flex flex-col gap-1.5 pt-3 border-t border-neutral-900 text-[10px] font-mono text-neutral-400">
+                      <span className="uppercase text-neutral-500 font-bold text-[9px] tracking-wider">Histórico de Ativações:</span>
+                      {buffHistory.map((hist, hIdx) => (
+                        <div key={hIdx} className="flex gap-2 items-center bg-emerald-950/20 px-2 py-1.5 rounded border border-emerald-950/30 text-emerald-400">
+                          <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
+                          <span>{hist}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Botão de feedback para acelerar e ir para resultados */}
@@ -2696,9 +3081,11 @@ Jogue agora em: ${window.location.href}`;
                         {/* P2 */}
                         <div className="flex flex-col items-center w-1/3">
                           <span className="text-gray-400 font-bold truncate max-w-[50px] text-center" title={p2?.driver || 'N/A'}>
-                            {p2 ? (p2.driver.split(' ').pop()) : '-'}
+                            {p2?.driver ? p2.driver.split(' ').pop() : (typeof p2 === 'string' ? p2.split(' ').pop() : '-')}
                           </span>
-                          <span className="text-[7px] text-gray-500 truncate max-w-[45px] text-center">{p2?.team.split(' ')[0]}</span>
+                          <span className="text-[7px] text-gray-500 truncate max-w-[45px] text-center">
+                            {p2?.team ? p2.team.split(' ')[0] : '-'}
+                          </span>
                           <div className="w-full bg-[#1A1A1A] border border-[#2a2a2a] rounded-t-sm h-8 mt-1 flex flex-col justify-center items-center text-gray-400">
                             <span className="font-extrabold text-[8px]">2º</span>
                           </div>
@@ -2708,9 +3095,11 @@ Jogue agora em: ${window.location.href}`;
                         <div className="flex flex-col items-center w-1/3">
                           <Trophy className="h-2.5 w-2.5 text-amber-500 animate-pulse mb-0.5" />
                           <span className="text-amber-400 font-bold truncate max-w-[52px] text-center" title={p1?.driver || 'N/A'}>
-                            {p1 ? (p1.driver.split(' ').pop()) : '-'}
+                            {p1?.driver ? p1.driver.split(' ').pop() : (typeof p1 === 'string' ? p1.split(' ').pop() : '-')}
                           </span>
-                          <span className="text-[7px] text-amber-500/60 truncate max-w-[45px] text-center">{p1?.team.split(' ')[0]}</span>
+                          <span className="text-[7px] text-amber-500/60 truncate max-w-[45px] text-center">
+                            {p1?.team ? p1.team.split(' ')[0] : '-'}
+                          </span>
                           <div className="w-full bg-gradient-to-t from-[#362703] to-[#916d03] border border-amber-600 rounded-t-sm h-12 mt-1 flex flex-col justify-center items-center text-amber-100 shadow-[0_0_8px_rgba(180,140,0,0.15)]">
                             <span className="font-extrabold text-[9px]">1º</span>
                           </div>
@@ -2719,9 +3108,11 @@ Jogue agora em: ${window.location.href}`;
                         {/* P3 */}
                         <div className="flex flex-col items-center w-1/3">
                           <span className="text-amber-700 font-bold truncate max-w-[50px] text-center" title={p3?.driver || 'N/A'}>
-                            {p3 ? (p3.driver.split(' ').pop()) : '-'}
+                            {p3?.driver ? p3.driver.split(' ').pop() : (typeof p3 === 'string' ? p3.split(' ').pop() : '-')}
                           </span>
-                          <span className="text-[7px] text-orange-950 truncate max-w-[45px] text-center">{p3?.team.split(' ')[0]}</span>
+                          <span className="text-[7px] text-orange-950 truncate max-w-[45px] text-center">
+                            {p3?.team ? p3.team.split(' ')[0] : '-'}
+                          </span>
                           <div className="w-full bg-[#17100b] border border-[#302118] rounded-t-sm h-6 mt-1 flex flex-col justify-center items-center text-amber-800">
                             <span className="font-extrabold text-[8px]">3º</span>
                           </div>
@@ -3664,6 +4055,57 @@ Jogue agora em: ${window.location.href}`;
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ==================== CONFIRMAÇÃO DE SUPPORT/BUFF CARD POPUP ==================== */}
+      {activeBuffModals && selectedCardToUse && (
+        <div id="buff_card_modal" className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
+          <div className="bg-[#0B0B0B] border border-amber-500/30 rounded-lg p-6 max-w-md w-full space-y-5 text-left shadow-[0_0_30px_rgba(245,158,11,0.15)] relative">
+            <div className="absolute top-0 right-0 p-3 text-[9px] text-amber-500 font-mono font-bold tracking-widest">TRANSMISSÃO DE RÁDIO MURETA</div>
+            
+            <div className="flex gap-3.5 items-start">
+              <div className="p-3 bg-amber-500/10 rounded-full border border-amber-500/20 text-amber-400">
+                <Sparkles className="h-6 w-6 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-mono tracking-widest text-[#FF1801] font-bold">Injeção Inteligente de Telemetria</span>
+                <h3 className="text-lg font-display font-bold text-white leading-tight mt-0.5">{selectedCardToUse.name}</h3>
+              </div>
+            </div>
+
+            <div className="p-4 bg-zinc-950 rounded border border-neutral-800 text-xs text-neutral-300 leading-relaxed font-sans">
+              {selectedCardToUse.description}
+            </div>
+
+            <div className="text-xs text-amber-300 bg-amber-950/30 p-3 rounded border border-amber-500/20 font-mono">
+              📌 Alvo corrente: <strong className="text-white uppercase">GP {CIRCUITS[simActiveRaceIdx]?.name?.replace('Grande Prêmio ', ' ') || "Corrida ativa"}</strong>
+            </div>
+
+            <p className="text-[11px] text-[#888] font-sans leading-normal">
+              Esta ação consumirá o card permanentemente pela duração do campeonato atual, recalculando instantaneamente os tempos e a classificação de pilotos deste GP para impulsionar seu time!
+            </p>
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => {
+                  setSelectedCardToUse(null);
+                  setActiveBuffModals(false);
+                  playBeep(330, 0.1);
+                }}
+                className="px-5 py-2.5 rounded text-xs font-display font-semibold border border-neutral-800 text-neutral-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all uppercase cursor-pointer tracking-wider"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn_confirm_buff_activation"
+                onClick={() => handleApplyCard(selectedCardToUse.id)}
+                className="px-6 py-2.5 rounded text-xs font-display font-bold bg-[#FF1801] hover:bg-red-700 text-white active:scale-95 transition-all shadow-[0_0_15px_rgba(255,24,1,0.3)] uppercase cursor-pointer tracking-widest"
+              >
+                Confirmar Ativação 🏁
+              </button>
+            </div>
           </div>
         </div>
       )}
