@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   User,
+  Users,
   UserCheck,
   Shield,
   History,
@@ -28,6 +29,9 @@ import {
   Share2,
   Trophy,
   Play,
+  Pause,
+  FastForward,
+  Gauge,
   Dices,
   Lock,
   Volume2,
@@ -40,7 +44,7 @@ import {
   Sparkle
 } from 'lucide-react';
 import { GAME_SLOTS, CIRCUITS, SEASONS_TEAMS, getRandomComboExcept, evaluateQualityRank, detectCombos } from './data';
-import { runChampionshipSimulation } from './simulation';
+import { runChampionshipSimulation, RIVAL_DRIVERS, DriverEntry } from './simulation';
 import { GameSlot, TeamCombination, ActiveCombo, SlotType } from './types';
 import { RadarChart } from './components/RadarChart';
 import {
@@ -126,18 +130,23 @@ const tipIconMap: Record<string, React.ComponentType<any>> = {
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
+    // Sort items by points descending so the leader of the GP step is at the top
+    const sortedPayload = [...payload].sort((a, b) => b.value - a.value);
+
     return (
-      <div className="bg-[#050505] border border-[#222] p-2.5 rounded shadow-xl font-mono text-[10px] space-y-1.5">
+      <div className="bg-[#050505]/95 backdrop-blur border border-[#333] p-2.5 rounded shadow-2xl font-mono text-[9px] space-y-1 max-h-72 overflow-y-auto min-w-[160px]">
         <p className="text-gray-400 font-bold border-b border-[#222] pb-1 mb-1">{label}</p>
-        {payload.map((entry: any, index: number) => (
-          <div key={index} className="flex items-center space-x-3 justify-between">
-            <span className="flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.stroke || entry.color }} />
-              <span className="text-gray-300">{entry.name}</span>
-            </span>
-            <span className="font-bold text-white">{entry.value} pts</span>
-          </div>
-        ))}
+        <div className="space-y-1">
+          {sortedPayload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center space-x-2.5 justify-between gap-1">
+              <span className="flex items-center space-x-1.5 truncate">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: entry.stroke || entry.color }} />
+                <span className="text-gray-300 truncate max-w-[100px]">{entry.name}</span>
+              </span>
+              <span className="font-bold text-white shrink-0">{entry.value} pts</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -165,11 +174,94 @@ export default function App() {
   const [rulesModalOpen, setRulesModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Custom singleplayer team name and color customization
+  const [playerTeamName, setPlayerTeamName] = useState<string>(() => {
+    return sessionStorage.getItem('f1_player_team_name') || 'Massa GP';
+  });
+  const [playerTeamColor, setPlayerTeamColor] = useState<string>(() => {
+    return sessionStorage.getItem('f1_player_team_color') || '#FF1801';
+  });
+  const [isTeamNameInputFocused, setIsTeamNameInputFocused] = useState<boolean>(false);
+
+  // Multiplayer championship states (2 to 4 simultaneous players)
+  const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
+  const [multiplayerPlayers, setMultiplayerPlayers] = useState<any[]>([]);
+  const [activeMultiPlayerIndex, setActiveMultiPlayerIndex] = useState<number>(0);
+  const [multiSetupOpen, setMultiSetupOpen] = useState<boolean>(false);
+  const [multiplayerCount, setMultiplayerCount] = useState<number>(4);
+  const [tempPlayerConfigs, setTempPlayerConfigs] = useState<any[]>([
+    { name: 'Jogador 1', teamName: 'Alpha Racing', color: '#FF1100' },
+    { name: 'Jogador 2', teamName: 'Apex Precision', color: '#00BBEF' },
+    { name: 'Jogador 3', teamName: 'Monza Power', color: '#EAB308' },
+    { name: 'Jogador 4', teamName: 'Samba Speed', color: '#00BB44' },
+  ]);
+
+  // Results page inspector sub-index
+  const [activeResultsPlayerIndex, setActiveResultsPlayerIndex] = useState<number>(0);
+
+  // Helper slice for setup
+  const multiplayerplayerConfigsSlice = () => {
+    return tempPlayerConfigs.slice(0, multiplayerCount);
+  };
+
+  // Helper verify whether a team belongs to a player
+  const isTeamUser = (tName: string) => {
+    if (isMultiplayer) {
+      return multiplayerPlayers.some(p => p.teamName === tName);
+    }
+    return tName === playerTeamName;
+  };
+
+  // Helper matching team name to color
+  const getTeamColor = (tName: string) => {
+    if (isMultiplayer) {
+      const pl = multiplayerPlayers.find(p => p.teamName === tName);
+      return pl ? pl.color : '#94A3B8';
+    }
+    return tName === playerTeamName ? playerTeamColor : '#94A3B8';
+  };
+
+  // Recount active player index switches
+  const setActivePlayer = (targetIdx: number) => {
+    setActiveMultiPlayerIndex(targetIdx);
+    const targetPlayer = multiplayerPlayers[targetIdx];
+    if (targetPlayer) {
+      const unfilledIdx = GAME_SLOTS.findIndex(s => !targetPlayer.slots[s.id]);
+      const nextSlotIdx = unfilledIdx !== -1 ? unfilledIdx : 0;
+      setActiveSlotIndex(nextSlotIdx);
+      setSlots(targetPlayer.slots);
+      setJokerAvailable(targetPlayer.jokerAvailable);
+      setActiveCombo(targetPlayer.activeCombo);
+      if (targetPlayer.activeCombo) {
+        generateCandidatesForSlot(GAME_SLOTS[nextSlotIdx], targetPlayer.activeCombo, targetPlayer.slots);
+      }
+    }
+  };
+
   // Buff cards states
   const [availableCards, setAvailableCards] = useState<any[]>([]);
   const [selectedCardToUse, setSelectedCardToUse] = useState<any | null>(null);
   const [activeBuffModals, setActiveBuffModals] = useState<boolean>(false);
   const [buffHistory, setBuffHistory] = useState<string[]>([]);
+  const [targetPlayerIdx, setTargetPlayerIdx] = useState<number>(0);
+
+  // 2-Phase Live Championship Simulator States
+  const [simGpIdx, setSimGpIdx] = useState<number>(0);
+  const [simPhase, setSimPhase] = useState<'intro' | 'strategy' | 'quali' | 'finished_quali' | 'race_lights' | 'race' | 'finished_race'>('intro');
+  const [multiplayerStrategies, setMultiplayerStrategies] = useState<Record<number, string>>({});
+  const [multiplayerCards, setMultiplayerCards] = useState<Record<number, { cardId: string; racesLeft: number }>>({});
+  const [marioKartMode, setMarioKartMode] = useState<boolean>(false);
+  const [simIsPlaying, setSimIsPlaying] = useState<boolean>(true);
+  const [simSpeed, setSimSpeed] = useState<number>(1);
+  const [simQualiLeaderboard, setSimQualiLeaderboard] = useState<any[]>([]);
+  const [simQualiActiveDriverIndex, setSimQualiActiveDriverIndex] = useState<number>(0);
+  const [simQualiActiveDriverDelta, setSimQualiActiveDriverDelta] = useState<any>(null);
+  const [simRaceLap, setSimRaceLap] = useState<number>(0);
+  const [simRaceLeaderboard, setSimRaceLeaderboard] = useState<any[]>([]);
+  const [simTickerLogs, setSimTickerLogs] = useState<string[]>([]);
+  const [simTelemetryValues, setSimTelemetryValues] = useState<Record<string, { speed: number; gear: number; rpm: number; throttle: number; brake: number; drs: boolean; temp: number }>>({});
+  const [simYellowFlag, setSimYellowFlag] = useState<boolean>(false);
+  const [simYellowFlagMessage, setSimYellowFlagMessage] = useState<string>('');
 
   const [gameMode, setGameMode] = useState<'home' | 'draft' | 'simulating' | 'results' | 'duelo'>('home');
   const [duelPreviousMode, setDuelPreviousMode] = useState<'home' | 'results'>('home');
@@ -664,8 +756,75 @@ export default function App() {
     } catch (_) {}
   };
 
+  // Start new multiplayer draft session
+  const handleStartMultiplayer = (pCount: number, playerConfigs: { name: string; teamName: string; color: string }[]) => {
+    setIsMultiplayer(true);
+    setDifficultyMode('normal');
+    
+    // Create the multiplayer draft states for each player
+    const initializedPlayers = playerConfigs.map((p, idx) => {
+      const rolled = getRandomComboExcept([], false);
+      return {
+        id: idx + 1,
+        name: p.name || `Jogador ${idx + 1}`,
+        teamName: p.teamName || `Escuderia ${idx + 1}`,
+        color: p.color || '#FF1801',
+        slots: {},
+        jokerAvailable: true,
+        activeCombo: rolled,
+      };
+    });
+
+    setMultiplayerPlayers(initializedPlayers);
+    setActiveMultiPlayerIndex(0);
+    setGameMode('draft');
+    
+    // Load candidates for current active player (Index 0)
+    const firstPlayer = initializedPlayers[0];
+    setActiveCombo(firstPlayer.activeCombo);
+    setJokerAvailable(true);
+    setSlots({}); 
+    setActiveSlotIndex(0);
+    generateCandidatesForSlot(GAME_SLOTS[0], firstPlayer.activeCombo, {});
+    playBeep(440, 0.1);
+    triggerToast('🏎️ Campeonato de ' + pCount + ' jogadores iniciado! Vez do ' + firstPlayer.name);
+  };
+
+  const triggerMultiplayerSimulation = (playersList: any[]) => {
+    setGameMode('simulating');
+    setSimActiveRaceIdx(-1);
+    setSimLightsCount(0);
+    setSimRaceCompleted(false);
+    // Pick 3 random support cards
+    const shuffled = [...BUFF_CARDS].sort(() => 0.5 - Math.random());
+    setAvailableCards(shuffled.slice(0, 3)); 
+    setBuffHistory([]);
+
+    const results = runChampionshipSimulation({}, 'normal', 'Seu Time', '#FF3E3E', playersList);
+    setSimulationResult(results);
+
+    // Initial countdown simulation lights
+    let lightTimer = 0;
+    const interval = setInterval(() => {
+      lightTimer += 1;
+      setSimLightsCount(lightTimer);
+      playBeep(520, 0.1);
+
+      if (lightTimer === 5) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setSimLightsCount(6);
+          playBeep(1000, 0.45);
+          
+          runStepByStepGPs(results);
+        }, 1200);
+      }
+    }, 700);
+  };
+
   // Start new draft session
   const handleStartGame = (mode: 'normal' | 'hard' | 'underdog') => {
+    setIsMultiplayer(false); // Make sure to reset multiplayer flag when starting singleplayer!
     setDifficultyMode(mode);
     setSlots({});
     setActiveSlotIndex(0);
@@ -696,9 +855,44 @@ export default function App() {
         sourceSeason: combo.season,
       }));
 
-      // Filter drivers that are already drafted to prevent duplicates
-      const draftedNames = Object.values(currentSlots).map(item => item && item.name).filter(Boolean);
-      let filteredDrivers = teamDrivers.filter(d => !draftedNames.includes(d.name));
+      // Base name comparison helper (strips " (Mestre da Chuva)", "(O Professor)", etc.)
+      const getBaseDriverName = (fullName: string) => {
+        if (!fullName) return '';
+        return fullName.split(' (')[0].trim();
+      };
+
+      const draftedBaseNames = new Set<string>();
+
+      // Collect drafted base names across all slots and players
+      if (isMultiplayer && multiplayerPlayers) {
+        multiplayerPlayers.forEach(p => {
+          if (p.slots) {
+            Object.values(p.slots).forEach((item: any) => {
+              if (item && item.name) {
+                draftedBaseNames.add(getBaseDriverName(item.name));
+              }
+            });
+          }
+        });
+      } else if (currentSlots) {
+        Object.values(currentSlots).forEach((item: any) => {
+          if (item && item.name) {
+            draftedBaseNames.add(getBaseDriverName(item.name));
+          }
+        });
+      }
+
+      // Also grab already drafted drivers in singleplayer state
+      if (slots) {
+        Object.values(slots).forEach((item: any) => {
+          if (item && item.name) {
+            draftedBaseNames.add(getBaseDriverName(item.name));
+          }
+        });
+      }
+
+      // Filter drivers that match any drafted base name
+      let filteredDrivers = teamDrivers.filter(d => !draftedBaseNames.has(getBaseDriverName(d.name)));
 
       // If we are looking for a rain specialist, let's inject historical wet weather masters as choices
       if (currentSlot.id === 'wet_specialist') {
@@ -781,8 +975,8 @@ export default function App() {
           }
         ];
         
-        // Add valid ones who aren't already drafted
-        const validWetMasters = wetMasters.filter(m => !draftedNames.includes(m.name));
+        // Add valid ones who aren't already drafted by base name
+        const validWetMasters = wetMasters.filter(m => !draftedBaseNames.has(getBaseDriverName(m.name)));
         filteredDrivers = [...filteredDrivers, ...validWetMasters];
       }
 
@@ -848,11 +1042,174 @@ export default function App() {
           }
         ];
         
-        const validLegends = legends.filter(l => !draftedNames.includes(l.name));
+        const validLegends = legends.filter(l => !draftedBaseNames.has(getBaseDriverName(l.name)));
         filteredDrivers = [...filteredDrivers, ...validLegends];
       }
 
-      // Just in case both are already taken, inject some classic generic/extra legendary drivers
+      // Historically bad drivers pool (20-50 ratings) to create severe frustration
+      const badDriversPool = [
+        {
+          id: 'yuji_ide',
+          name: 'Yuji Ide',
+          country: 'Japão 🇯🇵',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 32,
+          pace: 35,
+          consistency: 20,
+          chuva: 30,
+          aggressiveness: 99,
+          reliability: 25,
+          description: 'Teve a superlicença cassada após capotar Christijan Albers em Imola 2006. Perigo público no asfalto.',
+          entityType: 'driver',
+          sourceTeam: 'Super Aguri',
+          sourceSeason: 2006,
+        },
+        {
+          id: 'chanoch_nissany',
+          name: 'Chanoch Nissany',
+          country: 'Israel 🇮🇱',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 25,
+          pace: 15,
+          consistency: 30,
+          chuva: 20,
+          aggressiveness: 10,
+          reliability: 40,
+          description: 'Ficou a 13 segundos do melhor tempo comum nos treinos livres e pediu para puxarem o carro da brita por telefone.',
+          entityType: 'driver',
+          sourceTeam: 'Minardi',
+          sourceSeason: 2005,
+        },
+        {
+          id: 'taki_inoue',
+          name: 'Taki Inoue',
+          country: 'Japão 🇯🇵',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 35,
+          pace: 30,
+          consistency: 38,
+          chuva: 25,
+          aggressiveness: 45,
+          reliability: 30,
+          description: 'Famoso por ser atropelado por um safety car estacionando em Mônaco, e depois atropelado pelo caminhão de resgate na Hungria.',
+          entityType: 'driver',
+          sourceTeam: 'Footwork',
+          sourceSeason: 1995,
+        },
+        {
+          id: 'ricardo_rosset',
+          name: 'Ricardo Rosset',
+          country: 'Brasil 🇧🇷',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 38,
+          pace: 42,
+          consistency: 32,
+          chuva: 35,
+          aggressiveness: 55,
+          reliability: 40,
+          description: 'Ficava fora dos 107% rotineiramente e uma vez bateu de frente nos pneus ao tentar retornar à pista.',
+          entityType: 'driver',
+          sourceTeam: 'Tyrrell',
+          sourceSeason: 1998,
+        },
+        {
+          id: 'giovanni_lavaggi',
+          name: 'Giovanni Lavaggi',
+          country: 'Itália 🇮🇹',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 40,
+          pace: 45,
+          consistency: 35,
+          chuva: 38,
+          aggressiveness: 40,
+          reliability: 45,
+          description: 'Conhecido vulgarmente como "Johnny Carwash" por sua lentidão extrema e incapacidade mecânica absoluta.',
+          entityType: 'driver',
+          sourceTeam: 'Minardi',
+          sourceSeason: 1996,
+        },
+        {
+          id: 'perry_mccarthy',
+          name: 'Perry McCarthy',
+          country: 'Reino Unido 🇬🇧',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 42,
+          pace: 48,
+          consistency: 30,
+          chuva: 40,
+          aggressiveness: 60,
+          reliability: 35,
+          description: 'Correu pela tenebrosa e falida Andrea Moda e é o Stig original cinzento do clássico programa Top Gear.',
+          entityType: 'driver',
+          sourceTeam: 'Andrea Moda',
+          sourceSeason: 1992,
+        },
+        {
+          id: 'alex_yoong',
+          name: 'Alex Yoong',
+          country: 'Malásia 🇲🇾',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 44,
+          pace: 46,
+          consistency: 42,
+          chuva: 50,
+          aggressiveness: 52,
+          reliability: 55,
+          description: 'Ficou fora de limites na classificação por mais de 5 segundos correndo pela simpática Minardi.',
+          entityType: 'driver',
+          sourceTeam: 'Minardi',
+          sourceSeason: 2002,
+        },
+        {
+          id: 'jean_denis_deletraz',
+          name: 'Jean-Denis Deletraz',
+          country: 'Suíça 🇨🇭',
+          titles: 0,
+          wins: 0,
+          podiums: 0,
+          poles: 0,
+          rating_geral: 36,
+          pace: 34,
+          consistency: 25,
+          chuva: 35,
+          aggressiveness: 40,
+          reliability: 30,
+          description: 'Terminou Adelaide 1994 dez voltas atrás do líder em apenas algumas passagens, andando mais lento que carros comuns de rua.',
+          entityType: 'driver',
+          sourceTeam: 'Larrousse',
+          sourceSeason: 1994,
+        }
+      ];
+
+      // Shuffle and select up to 2 bad drivers that are not yet drafted, and inject them
+      const notDraftedBad = badDriversPool.filter(b => !draftedBaseNames.has(getBaseDriverName(b.name)));
+      const shuffledBad = [...notDraftedBad].sort(() => 0.5 - Math.random());
+      const selectedBad = shuffledBad.slice(0, 2);
+
+      filteredDrivers = [...filteredDrivers, ...selectedBad];
+
+      // Just in case slots are somehow completely empty, inject a classic fallback
       if (filteredDrivers.length === 0) {
         filteredDrivers.push({
           id: 'hamilton_classic',
@@ -978,6 +1335,16 @@ export default function App() {
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[activeSlotIndex], rolled, slots);
     
+    if (isMultiplayer) {
+      const updatedPlayers = [...multiplayerPlayers];
+      updatedPlayers[activeMultiPlayerIndex] = {
+        ...updatedPlayers[activeMultiPlayerIndex],
+        jokerAvailable: false,
+        activeCombo: rolled
+      };
+      setMultiplayerPlayers(updatedPlayers);
+    }
+
     playBeep(650, 0.15);
     triggerToast('🎲 Coringa ativado! Uma nova escuderia e era histórica foram sorteadas.');
   };
@@ -988,6 +1355,16 @@ export default function App() {
     const rolled = activeCombo || getRandomComboExcept([], difficultyMode === 'underdog');
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[idx], rolled, slots);
+    
+    if (isMultiplayer) {
+      const updatedPlayers = [...multiplayerPlayers];
+      updatedPlayers[activeMultiPlayerIndex] = {
+        ...updatedPlayers[activeMultiPlayerIndex],
+        activeCombo: rolled
+      };
+      setMultiplayerPlayers(updatedPlayers);
+    }
+
     playBeep(440, 0.05);
   };
 
@@ -1000,31 +1377,82 @@ export default function App() {
     // Dynamic click feedback
     playBeep(880, 0.08);
 
-    // Verify if there are any remaining unfilled slots
-    const unfilledSlots = GAME_SLOTS.filter(s => !newSlots[s.id]);
+    if (isMultiplayer) {
+      const updatedPlayers = [...multiplayerPlayers];
+      updatedPlayers[activeMultiPlayerIndex] = {
+        ...updatedPlayers[activeMultiPlayerIndex],
+        slots: newSlots,
+      };
+      setMultiplayerPlayers(updatedPlayers);
 
-    if (unfilledSlots.length > 0) {
-      // Check if we can progress sequentially or jump to the first empty slot
-      let nextIndex = activeSlotIndex + 1;
-      if (nextIndex >= GAME_SLOTS.length || newSlots[GAME_SLOTS[nextIndex].id]) {
-        const firstEmptyIdx = GAME_SLOTS.findIndex(s => !newSlots[s.id]);
-        if (firstEmptyIdx !== -1) {
-          nextIndex = firstEmptyIdx;
+      const unfilledSlots = GAME_SLOTS.filter(s => !newSlots[s.id]);
+
+      if (unfilledSlots.length > 0) {
+        let nextIndex = activeSlotIndex + 1;
+        if (nextIndex >= GAME_SLOTS.length || newSlots[GAME_SLOTS[nextIndex].id]) {
+          const firstEmptyIdx = GAME_SLOTS.findIndex(s => !newSlots[s.id]);
+          if (firstEmptyIdx !== -1) {
+            nextIndex = firstEmptyIdx;
+          }
+        }
+
+        if (nextIndex < GAME_SLOTS.length) {
+          setActiveSlotIndex(nextIndex);
+          const rolled = getRandomComboExcept([], false);
+          updatedPlayers[activeMultiPlayerIndex] = {
+            ...updatedPlayers[activeMultiPlayerIndex],
+            slots: newSlots,
+            activeCombo: rolled
+          };
+          setMultiplayerPlayers(updatedPlayers);
+          setActiveCombo(rolled);
+          generateCandidatesForSlot(GAME_SLOTS[nextIndex], rolled, newSlots);
+        }
+      } else {
+        // This player has finished drafting! Let's see if anyone else is still unfinished:
+        const everyoneReady = updatedPlayers.every(p => GAME_SLOTS.every(s => p.slots[s.id]));
+        if (everyoneReady) {
+          triggerToast('🎉 Todos os jogadores completaram o Draft! Iniciando simulação...');
+          triggerMultiplayerSimulation(updatedPlayers);
+        } else {
+          // Switch to the next unfinished player!
+          const nextUnfinishedIdx = updatedPlayers.findIndex(p => GAME_SLOTS.some(s => !p.slots[s.id]));
+          if (nextUnfinishedIdx !== -1) {
+            // Save before switching
+            setMultiplayerPlayers(updatedPlayers);
+            // Switch active player
+            setActivePlayer(nextUnfinishedIdx);
+            triggerToast(`🏁 ${updatedPlayers[activeMultiPlayerIndex].teamName} terminou o Draft! Turno de ${updatedPlayers[nextUnfinishedIdx].name}`);
+          }
         }
       }
+    } else {
+      // Verify if there are any remaining unfilled slots
+      const unfilledSlots = GAME_SLOTS.filter(s => !newSlots[s.id]);
 
-      if (nextIndex < GAME_SLOTS.length) {
-        setActiveSlotIndex(nextIndex);
-        // Roll next Season+Team combination
-        const rolled = getRandomComboExcept([], difficultyMode === 'underdog');
-        setActiveCombo(rolled);
-        generateCandidatesForSlot(GAME_SLOTS[nextIndex], rolled, newSlots);
+      if (unfilledSlots.length > 0) {
+        // Check if we can progress sequentially or jump to the first empty slot
+        let nextIndex = activeSlotIndex + 1;
+        if (nextIndex >= GAME_SLOTS.length || newSlots[GAME_SLOTS[nextIndex].id]) {
+          const firstEmptyIdx = GAME_SLOTS.findIndex(s => !newSlots[s.id]);
+          if (firstEmptyIdx !== -1) {
+            nextIndex = firstEmptyIdx;
+          }
+        }
+
+        if (nextIndex < GAME_SLOTS.length) {
+          setActiveSlotIndex(nextIndex);
+          // Roll next Season+Team combination
+          const rolled = getRandomComboExcept([], difficultyMode === 'underdog');
+          setActiveCombo(rolled);
+          generateCandidatesForSlot(GAME_SLOTS[nextIndex], rolled, newSlots);
+        } else {
+          triggerSimulation(newSlots);
+        }
       } else {
+        // Draft Complete! Let's trigger simulate
         triggerSimulation(newSlots);
       }
-    } else {
-      // Draft Complete! Let's trigger simulate
-      triggerSimulation(newSlots);
     }
   };
 
@@ -1041,7 +1469,7 @@ export default function App() {
     setBuffHistory([]);
 
     // Compile result
-    const results = runChampionshipSimulation(finalSlots, difficultyMode);
+    const results = runChampionshipSimulation(finalSlots, difficultyMode, playerTeamName, playerTeamColor);
     setSimulationResult(results);
 
     // Initial countdown simulation lights
@@ -1059,28 +1487,740 @@ export default function App() {
           playBeep(1000, 0.45);
           
           // Start step-by-step race simulations
-          runStepByStepGPs();
+          runStepByStepGPs(results);
         }, 1200);
       }
     }, 700);
   };
 
-  // Step key race events with custom timer
-  const runStepByStepGPs = () => {
-    let activeRace = 0;
-    const interval = setInterval(() => {
-      setSimActiveRaceIdx(activeRace);
-      playBeep(587, 0.1);
+  // Run single-GP Simulation inside App.tsx with strategies, card buffs, and MarioKart Mode
+  const runMultiplayerGPSimulation = (
+    gpIdx: number,
+    strategies: Record<number, string>,
+    cards: Record<number, { cardId: string; racesLeft: number }>,
+    enableMarioKart: boolean
+  ) => {
+    const finalPlayers = multiplayerPlayers && multiplayerPlayers.length > 0 
+      ? multiplayerPlayers 
+      : [{ id: 1, name: 'Jogador 1', teamName: playerTeamName, color: playerTeamColor, slots }];
 
-      activeRace += 1;
-      if (activeRace >= CIRCUITS.length) {
+    const userDrivers: DriverEntry[] = [];
+    const narrationHighlights: string[] = [];
+
+    finalPlayers.forEach(player => {
+      const pSlots = player.slots;
+      const d1 = pSlots['driver_1'];
+      const d2 = pSlots['driver_2'];
+      const reserve1 = pSlots['reserve_1'];
+      const reserve2 = pSlots['reserve_2'];
+      const wetSpecialist = pSlots['wet_specialist'];
+      const legacyWildcard = pSlots['legacy_wildcard'];
+      const boss = pSlots['team_boss'];
+      const chassis = pSlots['chassis'];
+      const strategist = pSlots['strategist'];
+      const engineer = pSlots['engineer'];
+
+      const combos = detectCombos(pSlots);
+      const totalComboBonus = combos.reduce((acc, c) => acc + c.bonusValue, 0);
+
+      const bossRating = boss?.rating_geral || 85;
+      const chassisRating = chassis?.rating_geral || 85;
+      const strategistRating = strategist?.rating_geral || 85;
+      const engineerRating = engineer?.rating_geral || 85;
+
+      const supportBonus = ((reserve1?.rating_geral || 80) + (reserve2?.rating_geral || 80)) / 40;
+      const legacyBonus = (legacyWildcard?.rating_geral || 80) / 30;
+
+      const reliabilityScore = ((chassis?.reliability || 85) + engineerRating + (boss?.pressure_handling || 85)) / 3 + totalComboBonus / 2;
+
+      const playerStrat = strategies[player.id] || 'equilibrada';
+      const playerCard = cards[player.id]?.racesLeft > 0 ? cards[player.id].cardId : null;
+
+      let stratPaceMod = 0;
+      let stratReliabilityMod = 0;
+      let stratConsistencyMod = 0;
+      let stratChuvaMod = 0;
+
+      if (playerStrat === 'agressiva') {
+        stratPaceMod = 7;
+        stratReliabilityMod = -15;
+      } else if (playerStrat === 'conservadora') {
+        stratPaceMod = -4;
+        stratReliabilityMod = 22;
+      } else if (playerStrat === 'climatica') {
+        if (CIRCUITS[gpIdx].isWet) {
+          stratChuvaMod = 12;
+          stratPaceMod = 4;
+        } else {
+          stratPaceMod = -4;
+        }
+      } else if (playerStrat === 'tecnica') {
+        const type = CIRCUITS[gpIdx].type;
+        if (type === 'rua' || type === 'técnico') {
+          stratConsistencyMod = 8;
+          stratPaceMod = 4;
+        } else if (type === 'veloz') {
+          stratPaceMod = -5;
+        }
+      }
+
+      let cardPaceMod = 0;
+      let cardReliabilityMod = 0;
+      let cardWinnerPush = false;
+      let cardDriver2Push = false;
+
+      if (playerCard === 'drs') {
+        cardPaceMod = 8;
+      } else if (playerCard === 'party_mode') {
+        cardWinnerPush = true;
+      } else if (playerCard === 'shield') {
+        cardReliabilityMod = 40;
+        cardPaceMod = 3;
+      } else if (playerCard === 'stop_iceman') {
+        cardPaceMod = 6;
+      } else if (playerCard === 'forced_rain') {
+        if (CIRCUITS[gpIdx].isWet) {
+          cardPaceMod = 10;
+        } else {
+          cardPaceMod = 3;
+        }
+      } else if (playerCard === 'multi21') {
+        cardDriver2Push = true;
+      }
+
+      const userDriver1: DriverEntry = {
+        name: d1?.name || `${player.name} Piloto 1`,
+        team: player.teamName,
+        color: player.color,
+        pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + stratPaceMod + cardPaceMod + (cardWinnerPush ? 15 : 0),
+        consistency: (d1?.consistency || 85) + (bossRating * 0.08) + totalComboBonus / 4 + stratConsistencyMod,
+        chuva: (d1?.chuva || 85) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4 + stratChuvaMod,
+        aggressiveness: d1?.aggressiveness || 85,
+        reliability: reliabilityScore + stratReliabilityMod + cardReliabilityMod,
+        isUser: true,
+        driverIndex: 1,
+        playerId: player.id,
+        slots: pSlots,
+      };
+
+      const userDriver2: DriverEntry = {
+        name: d2?.name || `${player.name} Piloto 2`,
+        team: player.teamName,
+        color: player.color,
+        pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + stratPaceMod + cardPaceMod + (cardDriver2Push ? 12 : 0),
+        consistency: (d2?.consistency || 82) + (bossRating * 0.08) + totalComboBonus / 4 + stratConsistencyMod,
+        chuva: (d2?.chuva || 83) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4 + stratChuvaMod,
+        aggressiveness: d2?.aggressiveness || 85,
+        reliability: reliabilityScore + stratReliabilityMod + cardReliabilityMod,
+        isUser: true,
+        driverIndex: 2,
+        playerId: player.id,
+        slots: pSlots,
+      };
+
+      userDrivers.push(userDriver1, userDriver2);
+    });
+
+    const gridDrivers: DriverEntry[] = [...RIVAL_DRIVERS, ...userDrivers];
+    const race = CIRCUITS[gpIdx];
+    const driverRaceScores: { driver: DriverEntry; score: number; dnf: boolean; dnfReason?: string; trackEffect?: string }[] = [];
+
+    gridDrivers.forEach(drv => {
+      let baseGridScore = 0;
+
+      if (race.type === 'veloz') {
+        const topSpeedFactor = drv.isUser ? (drv.slots?.['chassis']?.top_speed || 85) : 95;
+        baseGridScore += drv.pace * 0.5 + topSpeedFactor * 0.5;
+      } else if (race.type === 'rua' || race.type === 'técnico') {
+        const pSlots = drv.slots;
+        const chassisAero = pSlots?.['chassis']?.aerodynamics || 85;
+        const pBossRating = pSlots?.['team_boss']?.rating_geral || 85;
+        const pStrategistRating = pSlots?.['strategist']?.rating_geral || 85;
+        const pStratFactor = (pStrategistRating + pBossRating) / 2;
+        const aeroFactor = drv.isUser ? (chassisAero * 0.4 + pStratFactor * 0.3) : 94;
+        baseGridScore += drv.pace * 0.5 + drv.consistency * 0.3 + aeroFactor * 0.2;
+      } else {
+        baseGridScore += drv.pace * 0.6 + drv.consistency * 0.4;
+      }
+
+      if (race.isWet) {
+        const pSlots = drv.slots;
+        const wetSpecialistChuva = pSlots?.['wet_specialist']?.chuva || 80;
+        const wetAdvantage = drv.isUser ? (drv.chuva * 0.7 + wetSpecialistChuva * 0.3) : drv.chuva;
+        baseGridScore = (wetAdvantage * 0.8) + (drv.pace * 0.2) + 12;
+      }
+
+      let trackModifier = 0;
+      let trackEffectDesc = '';
+
+      if (race.isWet) {
+        if (drv.chuva >= 94) {
+          trackModifier += 6;
+          trackEffectDesc = '🌧️ Rei de Pista Molhada (+6)';
+        } else if (drv.chuva < 82) {
+          trackModifier -= 5;
+          trackEffectDesc = '⚠️ Escorregando na Chuva (-5)';
+        }
+      } else {
+        if (drv.aggressiveness >= 94 && (race.type === 'veloz' || race.type === 'rua')) {
+          trackModifier += 3;
+          trackEffectDesc = '🔥 Overtake Agressivo (+3)';
+        }
+      }
+
+      if (race.type === 'veloz') {
+        if (drv.pace >= 97) {
+          trackModifier += 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⚡ Ritmo de Reta (+4)` : '⚡ Ritmo de Reta (+4)';
+        } else if (drv.pace < 85) {
+          trackModifier -= 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🐢 Baixa Potência (-4)` : '🐢 Baixa Potência (-4)';
+        }
+      } else if (race.type === 'rua') {
+        if (drv.consistency >= 94) {
+          trackModifier += 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🛡️ Precisão Urbana (+4)` : '🛡️ Precisão Urbana (+4)';
+        } else if (drv.consistency < 84) {
+          trackModifier -= 4;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 💥 Risco de Muro (-4)` : '💥 Risco de Muro (-4)';
+        }
+      } else if (race.type === 'técnico') {
+        if (drv.consistency >= 95) {
+          trackModifier += 3;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 📐 Curvatura Técnica (+3)` : '📐 Curvatura Técnica (+3)';
+        }
+        if (drv.aggressiveness >= 95) {
+          trackModifier -= 3;
+          trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⛔ Desgaste de Pneus (-3)` : '⛔ Desgaste de Pneus (-3)';
+        }
+      }
+
+      let adjustedGridScore = baseGridScore + trackModifier;
+      const rngFactor = (Math.random() - 0.5) * 16;
+      let finalScore = adjustedGridScore + rngFactor;
+
+      const dnfRoll = Math.random() * 100;
+      let isDnf = false;
+      let dnfReason = '';
+
+      const totalDnfChance = Math.max(1, (100 - drv.reliability) * 0.15 + drv.aggressiveness * 0.04);
+      if (dnfRoll < totalDnfChance) {
+        isDnf = true;
+        const reasons = [
+          'Pane Elétrica Geral',
+          'Estouro Súbito de Pneu',
+          'Vazamento de Óleo',
+          'Superaquecimento do Motor',
+          'Ruptura na Barra de Direção',
+          'Colisão catastrófica na curva 1',
+          'Furo de radiador por detrito',
+          'Rodada na brita com motor apagado',
+          'Caixa de câmbio travada em 3ª marcha'
+        ];
+        dnfReason = reasons[Math.floor(Math.random() * reasons.length)];
+      }
+
+      driverRaceScores.push({
+        driver: drv,
+        score: isDnf ? -999 : finalScore,
+        dnf: isDnf,
+        dnfReason,
+        trackEffect: trackEffectDesc || undefined
+      });
+    });
+
+    if (enableMarioKart) {
+      driverRaceScores.sort((a, b) => b.score - a.score);
+      const numGridDrivers = driverRaceScores.length;
+
+      driverRaceScores.forEach((item, index) => {
+        if (item.dnf) return;
+        const roll = Math.random();
+
+        if (index <= 2) {
+          if (roll < 0.35) {
+            const drop = 25 + Math.random() * 20;
+            item.score -= drop;
+            item.trackEffect = item.trackEffect 
+              ? `${item.trackEffect} | 🐢 Atingido por Casco Azul (-${drop.toFixed(0)} pts)` 
+              : `🐢 Casco Azul (-${drop.toFixed(0)} pts)`;
+            narrationHighlights.push(`🐢 [MARIOKART] Caos total! O líder ${item.driver.name.split(' ').pop()} foi atingido por um Casco Azul voador e perdeu muito tempo!`);
+          } else if (roll < 0.50) {
+            const drop = 12 + Math.random() * 8;
+            item.score -= drop;
+            item.trackEffect = item.trackEffect 
+              ? `${item.trackEffect} | 🍌 Escorregou em Casca de Banana` 
+              : `🍌 Bananada tática`;
+          }
+        } else if (index >= numGridDrivers - 4) {
+          if (roll < 0.45) {
+            const boost = 35 + Math.random() * 25;
+            item.score += boost;
+            item.trackEffect = item.trackEffect 
+              ? `${item.trackEffect} | ⚡ Modo Bullet Bill (+${boost.toFixed(0)} pts)` 
+              : `⚡ Bullet Bill (+${boost.toFixed(0)} pts)`;
+            narrationHighlights.push(`⚡ [MARIOKART] Incrível! ${item.driver.name.split(' ').pop()} ativou o Bullet Bill de última hora e rasgou o asfalto saltando posições!`);
+          } else if (roll < 0.70) {
+            const boost = 15 + Math.random() * 10;
+            item.score += boost;
+            item.trackEffect = item.trackEffect 
+              ? `${item.trackEffect} | 🍄 Turbo de Cogumelo Triplo (+${boost.toFixed(0)} pts)` 
+              : `🍄 Cogumelos Triplos (+${boost.toFixed(0)} pts)`;
+          }
+        } else {
+          if (roll < 0.20) {
+            const boost = 10 + Math.random() * 12;
+            item.score += boost;
+            item.trackEffect = item.trackEffect ? `${item.trackEffect} | 🌟 Estrela de Invencibilidade` : `🌟 Estrela Ativada`;
+          } else if (roll < 0.40) {
+            const drop = 10 + Math.random() * 10;
+            item.score -= drop;
+            item.trackEffect = item.trackEffect ? `${item.trackEffect} | 🔴 Casco Vermelho` : `🔴 Casco Vermelho`;
+          }
+        }
+      });
+    }
+
+    driverRaceScores.sort((a, b) => b.score - a.score);
+
+    const f1Points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+    const podium: { driver: string; team: string; color: string }[] = [];
+    const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string; trackEffect?: string }[] = [];
+
+    driverRaceScores.forEach((item, posIdx) => {
+      const isDnf = item.dnf;
+      const pointsEarned = (!isDnf && posIdx < 10) ? f1Points[posIdx] : 0;
+
+      if (!isDnf && podium.length < 3) {
+        podium.push({
+          driver: item.driver.name,
+          team: item.driver.team,
+          color: item.driver.color,
+        });
+      }
+
+      positions.push({
+        driver: item.driver.name,
+        team: item.driver.team,
+        points: pointsEarned,
+        color: item.driver.color,
+        dnf: isDnf,
+        incident: isDnf ? item.dnfReason : undefined,
+        trackEffect: item.trackEffect
+      });
+    });
+
+    return {
+      podium,
+      positions,
+      highlights: narrationHighlights
+    };
+  };
+
+  const handleConfirmMultiplayerStrategy = () => {
+    if (!simulationResult) return;
+
+    // Simulate the specific GP with updated driver profiles based on strategy selections, card buffs & MarioKart effect
+    const results = runMultiplayerGPSimulation(simGpIdx, multiplayerStrategies, multiplayerCards, marioKartMode);
+    
+    // Deep clone simulationResult to replace active race result
+    const clonedRes = JSON.parse(JSON.stringify(simulationResult));
+    
+    if (clonedRes.raceResults[simGpIdx]) {
+      clonedRes.raceResults[simGpIdx].podium = results.podium;
+      clonedRes.raceResults[simGpIdx].positions = results.positions;
+    }
+
+    // Prepend any MarioKart alerts or strategy narrations
+    if (results.highlights.length > 0) {
+      clonedRes.narrationHighlights = [...results.highlights, ...clonedRes.narrationHighlights];
+    } else {
+      clonedRes.narrationHighlights.unshift(`🔧 Estratégia de corrida aplicada por todas as escuderias para o GP de ${CIRCUITS[simGpIdx].name}!`);
+    }
+
+    // Recalculate season points
+    const recalculated = recalculateStandingsFromRaces(clonedRes.raceResults);
+    clonedRes.driverStandings = recalculated.driverStandings;
+    clonedRes.teamStandings = recalculated.teamStandings;
+
+    // Apply card remaining races decays
+    const updatedCards = { ...multiplayerCards };
+    multiplayerPlayers.forEach(p => {
+      const activeC = updatedCards[p.id];
+      if (activeC && activeC.racesLeft > 0) {
+        const nextVal = activeC.racesLeft - 1;
+        if (nextVal <= 0) {
+          delete updatedCards[p.id]; // Expired!
+        } else {
+          updatedCards[p.id] = { ...activeC, racesLeft: nextVal };
+        }
+      }
+    });
+
+    setMultiplayerCards(updatedCards);
+    setSimulationResult(clonedRes);
+    
+    // Draw 3 fresh support cards for the pool of next selections
+    const shuffled = [...BUFF_CARDS].sort(() => 0.5 - Math.random());
+    setAvailableCards(shuffled.slice(0, 3));
+
+    // Proceed to standard GP intro loop so they can click "ABRIR SESSÃO DE CLASSIFICAÇÃO"
+    setSimPhase('intro');
+    triggerToast('⚙️ Telemetria de Estratégias Gravadas! Prontos para Qualificação!');
+    playBeep(880, 0.15);
+  };
+
+  // Start the 2-Phase Live GP Simulation
+  const handleStartGP = (gpIdx: number, resultsObj?: any) => {
+    const activeRes = resultsObj || simulationResult;
+    if (!activeRes) return;
+
+    setSimGpIdx(gpIdx);
+    setSimActiveRaceIdx(gpIdx);
+    setSimRaceCompleted(false);
+    setSimPhase(isMultiplayer ? 'strategy' : 'intro');
+    setSimRaceLap(0);
+    setSimYellowFlag(false);
+
+    if (isMultiplayer) {
+      const defaultStrats: Record<number, string> = {};
+      multiplayerPlayers.forEach(p => {
+        defaultStrats[p.id] = 'equilibrada';
+      });
+      setMultiplayerStrategies(defaultStrats);
+    }
+    setSimYellowFlagMessage('');
+
+    const gpPositions = activeRes.raceResults[gpIdx].positions;
+    const circuitInfo = CIRCUITS[gpIdx];
+    const climateLabel = circuitInfo.isWet ? '🌧️ CHUVA PESADA' : '☀️ TEMPO LIMPO';
+    const typeLabel = circuitInfo.type.toUpperCase();
+    
+    // 1. Initialize Ticker Logs
+    const initialLogs = [
+      `📍 GP de ${circuitInfo.name.replace('Grande Prêmio do ', '').replace('Grande Prêmio de ', '')} - Sintonizando transmissor de mureta.`,
+      `🏁 Estilo de Pista: ${typeLabel} | Condição Climática: ${climateLabel}.`,
+      `⚙️ Telemetria calibrada. Pilotos posicionados para a sessão de Classificação!`,
+    ];
+    setSimTickerLogs(initialLogs);
+
+    // 2. Generate Quali data derived from pre-calculated GP positions
+    let tempQualiList = gpPositions.map((p: any, idx: number) => {
+      const isDnf = p.dnf;
+      const qualiRank = isDnf ? (idx + Math.floor(Math.random() * 4)) : idx;
+      const baseSecs = 68.2 + (qualiRank * 0.38) + (Math.random() * 1.3);
+      
+      const s1Val = (baseSecs * 0.31 + (Math.random() - 0.5) * 0.12).toFixed(3);
+      const s2Val = (baseSecs * 0.40 + (Math.random() - 0.5) * 0.16).toFixed(3);
+      const s3Val = (baseSecs * 0.29 + (Math.random() - 0.5) * 0.11).toFixed(3);
+
+      const minutes = Math.floor(baseSecs / 60);
+      const secondsAndMillis = (baseSecs % 60).toFixed(3);
+      const qualiTimeStr = `${minutes}:${secondsAndMillis.padStart(6, '0')}`;
+
+      return {
+        driver: p.driver,
+        team: p.team,
+        color: p.color,
+        qualiCompleted: false,
+        rawTime: baseSecs,
+        qualiTimeStr,
+        s1: s1Val,
+        s2: s2Val,
+        s3: s3Val,
+        s1Status: 'yellow',
+        s2Status: 'yellow',
+        s3Status: 'yellow',
+        dnf: p.dnf,
+        incident: p.incident
+      };
+    });
+
+    // Sort to determine grid order and pole sitter
+    tempQualiList.sort((a, b) => a.rawTime - b.rawTime);
+
+    // Calculate diffs
+    const bestTempSecs = tempQualiList[0].rawTime;
+    tempQualiList = tempQualiList.map((item, idx) => {
+      return {
+        ...item,
+        qualiDiff: idx === 0 ? 'POLE' : `+${(item.rawTime - bestTempSecs).toFixed(3)}s`
+      };
+    });
+
+    setSimQualiLeaderboard(tempQualiList);
+    setSimQualiActiveDriverIndex(0);
+    setSimQualiActiveDriverDelta(null);
+  };
+
+  // Advance Qualifying session by completing one driver's lap on screen
+  const tickQualifying = () => {
+    if (simQualiActiveDriverIndex >= simQualiLeaderboard.length) {
+      // Finished all drivers! Change to finished_quali stage
+      setSimPhase('finished_quali');
+      playBeep(880, 0.4);
+      setSimTickerLogs(prev => [
+        `🚥 Treino Classificatório ENCERRADO!`,
+        `🏆 Pole Position garantida para ${simQualiLeaderboard[0]?.driver} (${simQualiLeaderboard[0]?.team}) com tempo de ${simQualiLeaderboard[0]?.qualiTimeStr}!`,
+        `⚙️ Próximo passo: Ajustar cargas aerodinâmicas e alinhar no grid de largada.`,
+        ...prev
+      ]);
+      return;
+    }
+
+    const currentIdx = simQualiActiveDriverIndex;
+    const driverEntry = simQualiLeaderboard[currentIdx];
+
+    // Mark current driver as completed in the leaderboard
+    const updatedLeaderboard = simQualiLeaderboard.map((d, dIdx) => {
+      if (dIdx === currentIdx) {
+        const s1Status = Math.random() < 0.2 ? 'purple' : (Math.random() < 0.5 ? 'green' : 'yellow');
+        const s2Status = Math.random() < 0.2 ? 'purple' : (Math.random() < 0.5 ? 'green' : 'yellow');
+        const s3Status = Math.random() < 0.2 ? 'purple' : (Math.random() < 0.5 ? 'green' : 'yellow');
+        
+        return {
+          ...d,
+          qualiCompleted: true,
+          s1Status,
+          s2Status,
+          s3Status
+        };
+      }
+      return d;
+    });
+
+    setSimQualiLeaderboard(updatedLeaderboard);
+    setSimQualiActiveDriverIndex(currentIdx + 1);
+
+    // Generate telemetry
+    setSimTelemetryValues(prev => ({
+      ...prev,
+      [driverEntry.driver]: {
+        speed: 295 + Math.floor(Math.random() * 35),
+        gear: 7 + Math.floor(Math.random() * 2),
+        rpm: 12200 + Math.floor(Math.random() * 1400),
+        throttle: 100,
+        brake: 0,
+        drs: Math.random() < 0.5,
+        temp: 102 + Math.floor(Math.random() * 10)
+      }
+    }));
+
+    setSimTickerLogs(prev => [
+      `⏱️ VOLTA COMPLETA: ${driverEntry.driver} fecha com tempo de ${driverEntry.qualiTimeStr} (${driverEntry.qualiDiff}).`,
+      `🟢 Setores de ${driverEntry.driver}: S1: ${driverEntry.s1}s | S2: ${driverEntry.s2}s | S3: ${driverEntry.s3}s.`,
+      ...prev
+    ]);
+
+    playBeep(650 + currentIdx * 35, 0.08);
+  };
+
+  // Convert qualifying results into live race starting positions and run starting lights
+  const startRaceLightsAndGrid = () => {
+    setSimPhase('race_lights');
+    setSimLightsCount(0);
+    setSimRaceLap(0);
+    setSimYellowFlag(false);
+    setSimYellowFlagMessage('');
+
+    // Prepopulate starting grid to map Quali standing
+    const startingGrid = simQualiLeaderboard.map((qd, posIdx) => {
+      return {
+        driver: qd.driver,
+        team: qd.team,
+        color: qd.color,
+        isDnf: false,
+        sortingScore: posIdx,
+        speed: 0,
+        gear: 0,
+        rpm: 0,
+        throttle: 0,
+        brake: 0,
+        drsActive: false,
+        engineTemp: 85
+      };
+    });
+
+    setSimRaceLeaderboard(startingGrid);
+
+    // Run lights countdown animation
+    let lightTimer = 0;
+    const interval = setInterval(() => {
+      lightTimer += 1;
+      setSimLightsCount(lightTimer);
+      playBeep(520, 0.1);
+
+      if (lightTimer === 5) {
         clearInterval(interval);
         setTimeout(() => {
-          setSimRaceCompleted(true);
-        }, 800);
+          setSimLightsCount(6);
+          setSimPhase('race');
+          setSimRaceLap(1);
+          playBeep(1000, 0.45);
+          setSimTickerLogs(prev => [
+            `🟢 LARGADA AUTORIZADA! As luzes vermelhas se apagaram!`,
+            ...prev
+          ]);
+        }, 1200);
       }
-    }, 1800); // 1.8 seconds per grand prix to view
+    }, 700);
   };
+
+  // Live race timer loop step
+  const tickRaceLap = () => {
+    const nextLap = simRaceLap + 1;
+    if (nextLap > 5) {
+      setSimPhase('finished_race');
+      setSimYellowFlag(false);
+      playBeep(987, 0.4);
+
+      const isFinalGP = simGpIdx === CIRCUITS.length - 1;
+      if (isFinalGP) {
+        setSimRaceCompleted(true);
+      }
+
+      setSimTickerLogs(prev => [
+        `🏁 BANDEIRA QUADRICULADA! Corrida finalizada sob festa nos boxes!`,
+        `🏆 PÓDIO DEFINIDO: 1º ${simRaceLeaderboard[0]?.driver} | 2º ${simRaceLeaderboard[1]?.driver} | 3º ${simRaceLeaderboard[2]?.driver}!`,
+        ...prev
+      ]);
+      return;
+    }
+
+    setSimRaceLap(nextLap);
+
+    const precomputedResult = simulationResult.raceResults[simGpIdx];
+    if (!precomputedResult) return;
+
+    const finalPositions = precomputedResult.positions;
+
+    let updatedRaceLeaderboard = simRaceLeaderboard.map(driverState => {
+      const qualiIdx = simQualiLeaderboard.findIndex(q => q.driver === driverState.driver);
+      const startPos = qualiIdx !== -1 ? qualiIdx : 5;
+
+      const finalIdx = finalPositions.findIndex(f => f.driver === driverState.driver);
+      const actualFinalIdx = finalIdx !== -1 ? finalIdx : 6;
+
+      const finalDriverObj = finalPositions[actualFinalIdx];
+
+      const progress = nextLap / 5;
+      const intermediateScore = startPos + (actualFinalIdx - startPos) * progress + (Math.random() - 0.5) * 1.8;
+
+      let isDnf = driverState.isDnf;
+      if (finalDriverObj?.dnf && !isDnf) {
+        const dnfTriggerLap = 2 + (finalIdx % 3);
+        if (nextLap >= dnfTriggerLap) {
+          isDnf = true;
+          setSimYellowFlag(true);
+          setSimYellowFlagMessage(`🚨 COLISÃO! ${driverState.driver} abandonou!`);
+          setSimTickerLogs(prev => [
+            `💥 ACIDENTE! ${driverState.driver} (${driverState.team}) bateu na curva e abandonou a prova! Motivo: ${finalDriverObj.incident || 'Superaquecimento mecânico'}.`,
+            ...prev
+          ]);
+        }
+      }
+
+      return {
+        ...driverState,
+        isDnf,
+        incident: finalDriverObj?.incident,
+        sortingScore: isDnf ? 999 : intermediateScore
+      };
+    });
+
+    updatedRaceLeaderboard.sort((a, b) => a.sortingScore - b.sortingScore);
+    setSimRaceLeaderboard(updatedRaceLeaderboard);
+
+    const leader = updatedRaceLeaderboard[0];
+    const userBest = updatedRaceLeaderboard.find(d => isTeamUser(d.team));
+
+    const commentaries = [
+      `🏎️ Lap ${nextLap}/5: Posições mudando na pista! Líder ${leader.driver} acelera forte.`,
+      userBest ? `📊 Seu carro (${userBest.driver}) se posiciona provisoriamente em P${updatedRaceLeaderboard.findIndex(d => d.driver === userBest.driver) + 1}.` : `🔋 Telemetria mostra desgaste acentuado de pneus para o pelotão.`,
+    ];
+
+    if (nextLap === 1) {
+      commentaries.unshift(`🚦 LARGADA AUTORIZADA! ${leader.driver} faz excelente largada sob ronco de motores!`);
+    } else if (nextLap === 3) {
+      commentaries.unshift(`⚡ Volta 3: DRS autorizado e fura de vácuo nas retas principais.`);
+    } else if (nextLap === 5) {
+      commentaries.unshift(`🏁 VOLTA FINAL! Disputa metro a metro por pontos cruciais do campeonato!`);
+    }
+
+    setSimTickerLogs(prev => [...commentaries, ...prev]);
+    playBeep(494, 0.08);
+  };
+
+  // Chrono simulation orchestrator (Compatibility placeholder)
+  const runStepByStepGPs = (resultsObj?: any) => {
+    handleStartGP(0, resultsObj);
+  };
+
+  useEffect(() => {
+    if (gameMode !== 'simulating' || !simIsPlaying) return;
+
+    const baseInterval = 1000;
+    const currentInterval = baseInterval / simSpeed;
+
+    const intervalId = setInterval(() => {
+      if (simPhase === 'quali') {
+        tickQualifying();
+      } else if (simPhase === 'race') {
+        tickRaceLap();
+      }
+    }, currentInterval);
+
+    return () => clearInterval(intervalId);
+  }, [gameMode, simIsPlaying, simPhase, simSpeed, simQualiActiveDriverIndex, simRaceLap, simQualiLeaderboard, simRaceLeaderboard]);
+
+  useEffect(() => {
+    if (gameMode !== 'simulating' || !simIsPlaying || simPhase !== 'race') return;
+
+    const intervalId = setInterval(() => {
+      setSimTelemetryValues(prev => {
+        const next = { ...prev };
+        simRaceLeaderboard.forEach(d => {
+          if (d.isDnf) {
+            next[d.driver] = { speed: 0, gear: 0, rpm: 0, throttle: 0, brake: 0, drs: false, temp: 85 };
+          } else {
+            const currentSpeed = next[d.driver]?.speed || (280 + Math.floor(Math.random() * 40));
+            const isCorner = Math.random() < 0.25;
+            let speed = currentSpeed;
+            let gear = next[d.driver]?.gear || 7;
+            let throttle = 100;
+            let brake = 0;
+            let rpm = 12500 + Math.floor(Math.random() * 1500);
+
+            if (isCorner) {
+              speed = 100 + Math.floor(Math.random() * 80);
+              gear = 2 + Math.floor(Math.random() * 2);
+              throttle = 15 + Math.floor(Math.random() * 20);
+              brake = 70 + Math.floor(Math.random() * 30);
+              rpm = 8500 + Math.floor(Math.random() * 2000);
+            } else {
+              speed = 280 + Math.floor(Math.random() * 55);
+              gear = 6 + Math.floor(Math.random() * 2);
+              throttle = 90 + Math.floor(Math.random() * 10);
+              brake = 0;
+            }
+
+            next[d.driver] = {
+              speed,
+              gear,
+              rpm,
+              throttle,
+              brake,
+              drs: speed > 290 && Math.random() < 0.35,
+              temp: 110 + Math.floor(Math.random() * 14)
+            };
+          }
+        });
+        return next;
+      });
+    }, 180);
+
+    return () => clearInterval(intervalId);
+  }, [gameMode, simIsPlaying, simPhase, simRaceLeaderboard]);
 
   // Recalculate standings on-the-fly when support/buff cards are applied
   const recalculateStandingsFromRaces = (raceResults: any[]) => {
@@ -1098,7 +2238,7 @@ export default function App() {
           dnfCount: 0,
           team: p.team,
           color: p.color,
-          isUser: p.team === 'Seu Time',
+          isUser: isTeamUser(p.team),
         };
         teamStandingsMap[p.team] = 0;
       });
@@ -1132,13 +2272,12 @@ export default function App() {
     })).sort((a, b) => b.points - a.points);
 
     const teamStandings = Object.keys(teamStandingsMap).map(tName => {
-      const isU = tName === 'Seu Time';
-      const firstDrv = driverStandings.find(d => d.team === tName);
+      const isU = isTeamUser(tName);
       return {
         team: tName,
         points: teamStandingsMap[tName],
         isUser: isU,
-        color: isU ? '#FF3E3E' : (firstDrv?.color || '#94A3B8'),
+        color: getTeamColor(tName),
       };
     }).sort((a, b) => b.points - a.points);
 
@@ -1163,14 +2302,25 @@ export default function App() {
     let hasApplied = false;
     let logMsg = '';
 
-    const userDriverEntries = raceRes.positions.filter((p: any) => p.team === 'Seu Time');
+    const targetPlayer = isMultiplayer
+      ? multiplayerPlayers[targetPlayerIdx]
+      : null;
+
+    const isTargetTeam = (tName: string) => {
+      if (isMultiplayer) {
+        return targetPlayer ? targetPlayer.teamName === tName : false;
+      }
+      return tName === playerTeamName;
+    };
+
+    const userDriverEntries = raceRes.positions.filter((p: any) => isTargetTeam(p.team));
     if (userDriverEntries.length === 0) {
       triggerToast('⚠️ Nenhum piloto do seu time encontrado nesta corrida!');
       return;
     }
 
     // Isolate competitor drivers
-    const others = raceRes.positions.filter((p: any) => p.team !== 'Seu Time');
+    const others = raceRes.positions.filter((p: any) => !isTargetTeam(p.team));
 
     if (cardId === 'drs') {
       userDriverEntries.forEach((u: any) => {
@@ -1183,7 +2333,10 @@ export default function App() {
       hasApplied = true;
 
     } else if (cardId === 'party_mode') {
-      const d1Name = slots['driver_1']?.name || 'Seu Piloto 1';
+      const currentInspectSlots = isMultiplayer
+        ? (multiplayerPlayers[targetPlayerIdx]?.slots || {})
+        : slots;
+      const d1Name = currentInspectSlots['driver_1']?.name || 'Seu Piloto 1';
       const d1Entry = raceRes.positions.find((p: any) => p.driver === d1Name);
       if (d1Entry) {
         d1Entry.dnf = false;
@@ -1213,7 +2366,7 @@ export default function App() {
       
       if (dnfRemoved) {
         // Find normal drivers and locate user drivers back in safe scoring zones (P5, P6)
-        const rest = raceRes.positions.filter((p: any) => p.team !== 'Seu Time' || !p.dnf);
+        const rest = raceRes.positions.filter((p: any) => !isTargetTeam(p.team) || !p.dnf);
         raceRes.positions = [
           ...rest.slice(0, 4),
           ...userDriverEntries,
@@ -1253,7 +2406,10 @@ export default function App() {
       hasApplied = true;
 
     } else if (cardId === 'multi21') {
-      const d2Name = slots['driver_2']?.name || 'Seu Piloto 2';
+      const currentInspectSlots = isMultiplayer
+        ? (multiplayerPlayers[targetPlayerIdx]?.slots || {})
+        : slots;
+      const d2Name = currentInspectSlots['driver_2']?.name || 'Seu Piloto 2';
       const d2Entry = raceRes.positions.find((p: any) => p.driver === d2Name);
       if (d2Entry) {
         d2Entry.dnf = false;
@@ -1394,31 +2550,18 @@ Jogue agora em: ${window.location.href}`;
 
   // Season point accumulation data for Recharts
   const seasonProgressionData = React.useMemo(() => {
-    if (!simulationResult || !simulationResult.raceResults) return [];
+    if (!simulationResult || !simulationResult.raceResults || !simulationResult.teamStandings) return [];
 
-    const championTeamEntry = simulationResult.teamStandings[0];
-    const rivalTeamEntry = championTeamEntry?.team === 'Seu Time'
-      ? simulationResult.teamStandings[1]
-      : championTeamEntry;
+    // All active teams in this simulation run
+    const teams = simulationResult.teamStandings.map((t: any) => t.team);
 
-    const rivalTeamName = rivalTeamEntry?.team || 'Rival';
-    const rivalColor = rivalTeamEntry?.color || '#1E40AF';
-
-    let userCumulative = 0;
-    let rivalCumulative = 0;
+    // Cumulative points cache
+    const cumulativePoints: Record<string, number> = {};
+    teams.forEach(tName => {
+      cumulativePoints[tName] = 0;
+    });
 
     return simulationResult.raceResults.map((raceResult: any, idx: number) => {
-      const userRacePoints = raceResult.positions
-        .filter((p: any) => p.team === 'Seu Time')
-        .reduce((sum: number, p: any) => sum + p.points, 0);
-
-      const rivalRacePoints = raceResult.positions
-        .filter((p: any) => p.team === rivalTeamName)
-        .reduce((sum: number, p: any) => sum + p.points, 0);
-
-      userCumulative += userRacePoints;
-      rivalCumulative += rivalRacePoints;
-
       const shortGpName = raceResult.raceName
         ? raceResult.raceName
             .replace('Grande Prêmio do ', 'GP ')
@@ -1427,22 +2570,30 @@ Jogue agora em: ${window.location.href}`;
             .replace('Grande Prêmio ', 'GP ')
         : `Etapa ${idx + 1}`;
 
-      return {
+      const stepData: Record<string, any> = {
         stage: idx + 1,
         name: shortGpName,
-        'Seu Time': userCumulative,
-        [rivalTeamName]: rivalCumulative,
-        rivalTeamName,
-        rivalColor,
       };
+
+      teams.forEach(tName => {
+        const racePoints = raceResult.positions
+          .filter((p: any) => p.team === tName)
+          .reduce((sum: number, p: any) => sum + p.points, 0);
+
+        cumulativePoints[tName] += racePoints;
+        stepData[tName] = cumulativePoints[tName];
+      });
+
+      return stepData;
     });
   }, [simulationResult]);
 
   // Average Rating
-  const activeAvgRating = () => {
-    const keys = Object.keys(slots);
+  const activeAvgRating = (customSlots?: Record<string, any>) => {
+    const targetSlots = customSlots || slots;
+    const keys = Object.keys(targetSlots);
     if (keys.length === 0) return 0;
-    const sum = keys.reduce((acc, k) => acc + (slots[k]?.rating_geral || 80), 0);
+    const sum = keys.reduce((acc, k) => acc + (targetSlots[k]?.rating_geral || 80), 0);
     return Math.round(sum / keys.length);
   };
 
@@ -1875,7 +3026,111 @@ Jogue agora em: ${window.location.href}`;
             <div className="lg:col-span-5 bg-[#0A0A0A] border border-[#222] rounded-lg p-6 space-y-6 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-3 text-[9px] text-[#444] font-mono italic uppercase tracking-wider">Historical Logs</div>
               
-              <div className="flex items-center space-x-2 border-b border-[#222] pb-3">
+              {/* ==================== WIDGET DA GARAGEM DE CUSTOMIZAÇÃO & MULTIPLAYER ==================== */}
+              <div className="bg-[#111] border border-neutral-800 rounded p-4 space-y-4 shadow-md">
+                <div className="flex items-center space-x-2 border-b border-neutral-800 pb-2.5">
+                  <Wrench className="h-4.5 w-4.5 text-red-500 animate-pulse" />
+                  <h3 className="font-display font-medium uppercase tracking-wider text-neutral-200 text-xs">
+                    Garagem de Customização & Multiplayer
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono text-neutral-400 block uppercase">NOME DA SUA EQUIPE</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        id="input_player_team_name"
+                        value={playerTeamName}
+                        onChange={(e) => {
+                          const val = e.target.value.substring(0, 24);
+                          setPlayerTeamName(val);
+                          sessionStorage.setItem('f1_player_team_name', val);
+                        }}
+                        onFocus={() => setIsTeamNameInputFocused(true)}
+                        onBlur={() => setIsTeamNameInputFocused(false)}
+                        placeholder="Ex: Massa GP"
+                        className="w-full bg-black/60 border border-neutral-800 pl-2.5 pr-8 py-1.5 rounded text-xs text-white focus:outline-none transition-all duration-300 focus:border-[#FF1801] focus:ring-1 focus:ring-[#FF1801]/30 focus:shadow-[0_0_12px_rgba(255,24,1,0.25)]"
+                      />
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300">
+                        <Cpu className={`h-3.5 w-3.5 transition-all duration-300 ${isTeamNameInputFocused ? 'text-[#FF1801] opacity-90 animate-pulse' : 'text-neutral-600 opacity-40'}`} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono text-neutral-400 block uppercase">COR REPRESENTATIVA</label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        id="input_player_team_color"
+                        value={playerTeamColor}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPlayerTeamColor(val);
+                          sessionStorage.setItem('f1_player_team_color', val);
+                        }}
+                        className="w-8 h-8 rounded bg-transparent border-0 cursor-pointer outline-none shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={playerTeamColor}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPlayerTeamColor(val);
+                          sessionStorage.setItem('f1_player_team_color', val);
+                        }}
+                        className="w-full bg-black/60 border border-neutral-800 focus:border-[#FF1801]/60 px-2.5 py-1.5 rounded text-[10px] font-mono uppercase text-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Racing color presets shortcuts */}
+                <div className="space-y-1 pt-0.5">
+                  <span className="text-[9px] font-mono text-neutral-500 block uppercase">Atalhos de Escuderias Clássicas:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { name: 'Ferrari', color: '#FF1801' },
+                      { name: 'McLaren', color: '#FF8700' },
+                      { name: 'Red Bull', color: '#0C1623' },
+                      { name: 'Mercedes', color: '#00A398' },
+                      { name: 'Aston', color: '#006F62' },
+                    ].map(preset => (
+                      <button
+                        key={preset.name}
+                        onClick={() => {
+                          setPlayerTeamColor(preset.color);
+                          sessionStorage.setItem('f1_player_team_color', preset.color);
+                          playBeep(520, 0.05);
+                        }}
+                        className="px-2 py-0.5 bg-black/40 hover:bg-black/85 hover:border-neutral-700 transition-colors border border-neutral-800 rounded-sm text-[9px] font-mono text-neutral-300 flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: preset.color }}></span>
+                        <span>{preset.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Multiplayer Section Call-To-Action */}
+                <div className="border-t border-neutral-800 pt-3">
+                  <button
+                    id="btn_open_multiplayer_setup"
+                    onClick={() => {
+                      setMultiSetupOpen(true);
+                      playBeep(440, 0.1);
+                    }}
+                    className="w-full bg-[#FF1801]/10 hover:bg-[#FF1801]/25 border border-[#FF1801]/40 hover:border-[#FF1801] text-white font-display font-medium py-3 rounded-md text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-[0_0_10px_rgba(255,24,1,0.05)] uppercase"
+                  >
+                    <Users className="h-4.5 w-4.5 text-[#FF1801] animate-pulse" />
+                    <span>Iniciar Draft Multiplayer (Até 4 Jogadores)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 border-b border-[#222] pb-3 pt-2">
                 <History className="h-4 w-4 text-[#FF1801]" />
                 <h3 className="font-display font-bold uppercase tracking-wider text-[#E0E0E0] text-sm">Seu Histórico Recente</h3>
               </div>
@@ -2101,7 +3356,72 @@ Jogue agora em: ${window.location.href}`;
 
         {/* ==================== 2. TELA DRAFT (GAMEPLAY) ==================== */}
         {gameMode === 'draft' && (
-          <div id="screen_draft" className="grid grid-cols-1 lg:grid-cols-12 gap-6 py-2">
+          <div className="space-y-4 w-full">
+            {/* Multiplayer Tab Selector Bar */}
+            {isMultiplayer && (
+              <div className="bg-[#0A0A0A] border border-[#222] p-3 rounded shadow-md">
+                <div className="flex flex-wrap items-center justify-between gap-1 border-b border-[#222] pb-2 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-[#FF1801] animate-pulse" />
+                    <span className="font-display font-medium text-[11px] uppercase tracking-wider text-neutral-300">
+                      Painel de Controle de Draft Simultâneo
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-mono text-neutral-500">Clique para alternar e gerenciar cada escuderia livremente</span>
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                  {multiplayerPlayers.map((player, idx) => {
+                    const isActive = idx === activeMultiPlayerIndex;
+                    const filledCount = Object.keys(player.slots).length;
+                    const isFullyDrafted = filledCount === 10;
+                    
+                    return (
+                      <button
+                        key={player.id}
+                        onClick={() => {
+                          setActivePlayer(idx);
+                          playBeep(440 + idx * 50, 0.08);
+                        }}
+                        className={`p-2.5 rounded text-left transition-all border relative cursor-pointer ${
+                          isActive
+                            ? 'bg-neutral-800/60 border-neutral-700 text-white shadow'
+                            : 'bg-black/40 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+                        }`}
+                        style={{
+                          borderLeft: `4px solid ${player.color}`,
+                          boxShadow: isActive ? `0 0 10px ${player.color}20` : 'none'
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="font-bold text-[11px] uppercase tracking-tight block truncate max-w-[80%] text-neutral-100">
+                            {player.name}
+                          </span>
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: player.color }}
+                          ></span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] font-mono text-neutral-400 leading-none">
+                          <span className="truncate max-w-[70%]">{player.teamName}</span>
+                          <span className={`font-bold ${isFullyDrafted ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {filledCount}/10
+                          </span>
+                        </div>
+                        
+                        {isFullyDrafted && (
+                          <div className="absolute top-1 right-1 text-[8px] bg-emerald-500/10 text-emerald-400 px-1 rounded border border-emerald-500/20 font-bold">
+                            🏁 OK
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div id="screen_draft" className="grid grid-cols-1 lg:grid-cols-12 gap-6 py-2">
             
             {/* Coluna Esquerda (lg:col-span-5): Tabela de Progresso / Contratos Preenchidos */}
             <div className="lg:col-span-5 space-y-3">
@@ -2487,161 +3807,991 @@ Jogue agora em: ${window.location.href}`;
             </div>
 
           </div>
+          </div>
         )}
 
         {/* ==================== 3. TELA DE SIMULAÇÃO (START LIGHTS & GP CALENDAR) ==================== */}
         {gameMode === 'simulating' && (
-          <div id="screen_simulating" className="max-w-2xl w-full mx-auto bg-[#0A0A0A] border border-[#222] rounded p-6 sm:p-8 space-y-8 text-center shadow-2xl my-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 text-[8px] text-[#444] font-mono uppercase tracking-widest leading-none">Telemetry engine v42</div>
+          <div id="screen_simulating" className="max-w-5xl w-full mx-auto bg-[#070707] border border-[#222] rounded-lg p-5 sm:p-6 space-y-6 shadow-2xl my-6 relative overflow-hidden text-left">
+            <div className="absolute top-0 right-0 p-3 text-[8px] text-[#555] font-mono uppercase tracking-widest leading-none">Paddock Command Broadcast Engine v3.0</div>
             
-            {/* Countdown de largada F1 */}
-            <div className="space-y-4">
-              <span className="text-[10px] uppercase font-mono text-gray-500 tracking-widest block">LARGADA DO CAMPEONATO MUNDIAL</span>
-              
-              {/* As 5 luzes do semáforo da F1 */}
-              <div className="flex justify-center space-x-4 py-4 bg-black/60 rounded border border-[#222] max-w-sm mx-auto">
-                {[1, 2, 3, 4, 5].map((lightNum) => {
-                  const isOn = simLightsCount >= lightNum && simLightsCount < 6;
-                  return (
-                    <div
-                      key={lightNum}
-                      className="flex flex-col items-center space-y-1.5"
-                    >
-                      {/* Lâmpadas vermelhas */}
-                      <div className="bg-[#1C0506] border border-[#331112] p-1 rounded-full">
-                        <div className={`h-8 w-8 rounded-full transition-all duration-100 ${
-                          isOn 
-                            ? 'bg-[#FF1801] shadow-[0_0_20px_#FF1801] animate-pulse border border-[#FF1801]' 
-                            : 'bg-stone-900 border border-stone-950'
-                        }`} />
-                      </div>
-                      
-                      {/* Painelzinho indicativo */}
-                      <div className="h-1.5 w-1.5 rounded-full bg-[#111]" />
-                    </div>
-                  );
-                })}
-              </div>
-
-              {simLightsCount < 6 ? (
-                <p className="text-[11px] text-[#FF1801] font-mono tracking-wider animate-pulse uppercase">Sincronizando mureta de largada...</p>
-              ) : (
-                <p className="text-sm font-display font-medium text-green-500 tracking-wide uppercase italic">LARGADA AUTORIZADA! PUSH NOW!</p>
-              )}
-            </div>
-
-            {/* Progresso de Corridas do Calendário */}
-            {simLightsCount >= 6 && (
-              <div className="space-y-6 animate-fade-in z-10">
-                <div className="border-t border-[#222] pt-6">
-                  <h4 className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">CALENDÁRIO DE PROVAS ({CIRCUITS.length} ETAPAS):</h4>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                  {CIRCUITS.map((rc, idx) => {
-                    const isCompeted = idx < simActiveRaceIdx;
-                    const isNow = idx === simActiveRaceIdx;
-                    const winnerOfGp = isCompeted && simulationResult?.raceResults[idx]?.podium[0];
-
+            {/* INITIAL OVERALL START LIGHTS COUNTDOWN */}
+            {simActiveRaceIdx === -1 && (
+              <div className="space-y-6 text-center py-10">
+                <span className="text-[10px] uppercase font-mono text-gray-500 tracking-widest block">LARGADA DO CAMPEONATO MUNDIAL F1 DRAFT</span>
+                
+                {/* As 5 luzes do semáforo da F1 */}
+                <div className="flex justify-center space-x-4 py-6 bg-black/60 rounded border border-[#222] max-w-sm mx-auto">
+                  {[1, 2, 3, 4, 5].map((lightNum) => {
+                    const isOn = simLightsCount >= lightNum && simLightsCount < 6;
                     return (
-                      <div
-                        key={rc.name}
-                        className={`p-2.5 rounded border text-left flex flex-col justify-between h-24 transition-all ${
-                          isNow
-                            ? 'border-[#FF1801] bg-[#FF1801]/10 scale-102 shadow-[0_0_12px_rgba(255,24,1,0.25)] text-white'
-                            : isCompeted
-                            ? 'border-emerald-500/20 bg-emerald-500/5 text-gray-300'
-                            : 'border-[#1C1C1C] bg-[#050505]/40 text-gray-600'
-                        }`}
-                      >
-                        <div>
-                          <span className="text-[8px] font-mono font-bold block mb-1 text-gray-400">
-                            ETAPA {idx + 1 < 10 ? `0${idx + 1}` : idx + 1}
-                          </span>
-                          <span className="block text-[11px] font-display font-semibold truncate text-white leading-tight" title={rc.name}>
-                            {rc.name.replace('Grande Prêmio ', 'GP ')}
-                          </span>
+                      <div key={lightNum} className="flex flex-col items-center space-y-2">
+                        <div className="bg-[#1C0506] border border-[#331112] p-1 rounded-full">
+                          <div className={`h-10 w-10 rounded-full transition-all duration-100 ${
+                            isOn 
+                              ? 'bg-[#FF1801] shadow-[0_0_20px_#FF1801] border border-[#FF1801]' 
+                              : 'bg-stone-900 border border-stone-950'
+                          }`} />
                         </div>
-
-                        <div>
-                          {isNow && (
-                            <span className="text-[9px] text-[#FF1801] font-mono flex items-center space-x-1 animate-pulse font-bold">
-                              <span className="h-1.5 w-1.5 bg-[#FF1801] rounded-full"></span>
-                              <span>LIVE SIM...</span>
-                            </span>
-                          )}
-
-                          {isCompeted && winnerOfGp && (
-                            <div className="text-[10px] text-green-400 font-mono flex items-center space-x-1">
-                              <Trophy className="h-3 w-3 inline text-amber-500 shrink-0" />
-                              <span className="truncate">
-                                {typeof winnerOfGp === 'string'
-                                  ? (winnerOfGp.split(' ').pop() || winnerOfGp)
-                                  : (winnerOfGp.driver ? (winnerOfGp.driver.split(' ').pop() || winnerOfGp.driver) : 'Nenhum')}
-                              </span>
-                            </div>
-                          )}
-
-                          {!isCompeted && !isNow && (
-                            <span className="text-[9px] text-[#444] font-mono font-bold">FECHADO</span>
-                          )}
-                        </div>
+                        <div className="h-2 w-2 rounded-full bg-[#111]" />
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Caixa informativa do progresso do campeonato */}
-                <div className="bg-[#050505] border border-[#222] p-4 rounded text-xs space-y-2">
-                  <div className="flex justify-between items-center text-[9px] font-mono text-gray-500">
-                    <span>PROGRESSO GERAL</span>
-                    <span>{simActiveRaceIdx + 1} de {CIRCUITS.length} corridas simuladas</span>
+                {simLightsCount < 6 ? (
+                  <p className="text-xs text-[#FF1801] font-mono tracking-wider animate-pulse uppercase">Sincronizando telemetria global...</p>
+                ) : (
+                  <p className="text-sm font-display font-medium text-green-500 tracking-wide uppercase italic">SINAL VERDE! SISTEMA ATIVO!</p>
+                )}
+              </div>
+            )}
+
+            {/* LIVE MULTI-PHASE SYSTEM FOR THE CURRENT ACTIVE GP */}
+            {simActiveRaceIdx >= 0 && (
+              <div className="space-y-6">
+                
+                {/* BRANDING HEADER WITH ACTIVE CIRCUIT INFO */}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-black/40 border border-neutral-900 p-4 rounded-md">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2 py-0.5 bg-[#FF1801] text-white font-mono text-[9px] font-bold uppercase rounded-sm">
+                        ETAPA {simGpIdx + 1} DE {CIRCUITS.length}
+                      </span>
+                      <span className="text-xs text-neutral-400 font-mono font-semibold">
+                        {CIRCUITS[simGpIdx]?.type?.toUpperCase()} STYLE
+                      </span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-display font-black text-white uppercase tracking-tight mt-1">
+                      {CIRCUITS[simGpIdx]?.name}
+                    </h2>
                   </div>
-                  <div className="w-full bg-[#151515] h-1.5 rounded overflow-hidden border border-[#222]/50">
-                    <div
-                      className="bg-[#FF1801] h-full transition-all duration-500 shadow-[0_0_10px_rgba(255,24,1,0.5)]"
-                      style={{ width: `${((simActiveRaceIdx + 1) / CIRCUITS.length) * 100}%` }}
-                    />
+
+                  <div className="flex gap-3 text-xs font-mono">
+                    <div className="bg-[#111] border border-neutral-800 px-3 py-1.5 rounded text-neutral-300 flex items-center space-x-2">
+                      <span>Clima:</span>
+                      <span className="font-bold flex items-center">
+                        {CIRCUITS[simGpIdx]?.isWet ? (
+                          <span className="text-sky-400 flex items-center gap-1">🌧️ MOLHADO (Pista Lisa)</span>
+                        ) : (
+                          <span className="text-amber-400 flex items-center gap-1">☀️ SECO / ESTÁVEL</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="bg-[#111] border border-neutral-800 px-3 py-1.5 rounded text-neutral-300 flex items-center space-x-2">
+                      <span>Fase Ativa:</span>
+                      <span className="font-bold text-[#FF1801] uppercase tracking-wider animate-pulse">
+                        {simPhase === 'intro' && 'PREVIEW'}
+                        {simPhase === 'quali' && 'CLASSIFICAÇÃO'}
+                        {simPhase === 'finished_quali' && 'GRID DE LARGADA'}
+                        {simPhase === 'race_lights' && 'ALINHAMENTO'}
+                        {simPhase === 'race' && `CORRIDA LIVE - LAP ${simRaceLap}/5`}
+                        {simPhase === 'finished_race' && 'GP FINALIZADO'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* 🛒 BARRA DE SUPORTE E BUFFS EM TEMPO REAL */}
-                <div className="border border-neutral-800 bg-neutral-950/60 p-5 rounded text-left mt-6 space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-neutral-800 pb-3">
+                {/* SIMULATION PLAYBACK COMMAND PANEL */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0C0C0C]/90 border border-[#222] px-4 py-3 rounded-md">
+                  
+                  {/* Playback Controls */}
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setSimIsPlaying(!simIsPlaying)}
+                      className={`px-3 py-2 text-xs font-mono font-bold rounded flex items-center space-x-1.5 cursor-pointer border transition-all ${
+                        simIsPlaying 
+                          ? 'bg-amber-500/10 border-amber-500 text-amber-500 hover:bg-amber-500 hover:text-black shadow-md' 
+                          : 'bg-green-500/10 border-green-500 text-green-500 hover:bg-green-500 hover:text-black shadow-md'
+                      }`}
+                    >
+                      {simIsPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                      <span>{simIsPlaying ? 'PAUSAR' : 'EXECUTAR'}</span>
+                    </button>
+
+                    <div className="flex items-center bg-[#111] rounded border border-neutral-800 p-0.5">
+                      {[1, 2, 4].map((speedVal) => (
+                        <button
+                          key={speedVal}
+                          type="button"
+                          onClick={() => setSimSpeed(speedVal)}
+                          className={`px-2 py-1 text-[10px] font-mono font-bold rounded-sm cursor-pointer transition-all ${
+                            simSpeed === speedVal 
+                              ? 'bg-[#FF1801] text-white shadow-inner' 
+                              : 'text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          {speedVal}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Immediate skip actions to ensure control */}
+                  <div className="flex items-center space-x-2">
+                    {simPhase === 'quali' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSimPhase('finished_quali');
+                          playBeep(800, 0.25);
+                          setSimQualiLeaderboard(prev => prev.map(item => ({ ...item, qualiCompleted: true })));
+                          setSimQualiActiveDriverIndex(simQualiLeaderboard.length);
+                          setSimTickerLogs(p => ['⏭️ Qualificação pulada para final.', ...p]);
+                        }}
+                        className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-neutral-300 cursor-pointer"
+                      >
+                        Pular Quali ⏱️
+                      </button>
+                    )}
+
+                    {simPhase === 'race' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSimPhase('finished_race');
+                          setSimRaceLap(5);
+                          setSimYellowFlag(false);
+                          playBeep(987, 0.4);
+                          const finalPositions = simulationResult.raceResults[simGpIdx].positions;
+                          const mappedGrid = finalPositions.map((p: any, posIdx: number) => ({
+                            driver: p.driver,
+                            team: p.team,
+                            color: p.color,
+                            isDnf: p.dnf,
+                            incident: p.incident,
+                            sortingScore: posIdx
+                          }));
+                          setSimRaceLeaderboard(mappedGrid);
+                          if (simGpIdx === CIRCUITS.length - 1) {
+                            setSimRaceCompleted(true);
+                          }
+                          setSimTickerLogs(p => ['⏭️ Corrida pulada para bandeirada final.', ...p]);
+                        }}
+                        className="bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 px-3 py-1.5 rounded text-[10px] font-mono font-bold text-neutral-300 cursor-pointer"
+                      >
+                        Ir para Fim 🏁
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Instant simulate season
+                        setSimRaceCompleted(true);
+                        setSimActiveRaceIdx(CIRCUITS.length - 1);
+                        setSimGpIdx(CIRCUITS.length - 1);
+                        setGameMode('results');
+                        handleShowFinalResults();
+                      }}
+                      className="bg-[#FF1801]/10 border border-[#FF1801]/30 hover:bg-[#FF1801] hover:text-white px-3 py-1.5 rounded text-[10px] font-mono font-bold text-[#FF1801] cursor-pointer transition-all"
+                    >
+                      Pular Todo Campeonato 🚀
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2-PHASE SCREEN RENDERING AREA */}
+                
+                {/* PHASE 0: MULTIPLAYER STRATEGY SELECTION */}
+                {simPhase === 'strategy' && (
+                  <div className="bg-[#0A0A0A] border border-[#222] p-8 rounded-lg space-y-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 text-[10px] text-zinc-600 font-mono uppercase tracking-widest leading-none">
+                      Estratégias de GP
+                    </div>
+
+                    <div className="border-b border-[#222] pb-4">
+                      <h3 className="text-rose-500 font-mono text-xs uppercase tracking-widest font-bold mb-1">
+                        MULTIPLAYER: SALA DE ESTRATÉGIAS & CARTAS
+                      </h3>
+                      <h4 className="text-3xl font-display font-black text-white leading-tight uppercase font-black">
+                        GP {CIRCUITS[simGpIdx]?.name.replace('Grande Prêmio ', '')}
+                      </h4>
+                      <p className="text-xs text-neutral-400 mt-1 font-sans">
+                        Selecione a estratégia ideal e use ou visualize as cartas de suporte para cada escuderia. Os efeitos de cartas duram por 3 corridas!
+                      </p>
+                    </div>
+
+                    {/* Circuit info box */}
+                    <div className="bg-[#111] p-4 rounded border border-[#222] flex flex-wrap gap-6 items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[#888] block uppercase font-mono text-[9px] mb-0.5">Estilo do Circuito</span>
+                        <span className="text-white font-bold uppercase font-sans">
+                          {CIRCUITS[simGpIdx]?.type === 'veloz' && '⚡ Pistas Rápidas (Foco em Reta)'}
+                          {CIRCUITS[simGpIdx]?.type === 'rua' && '📐 Circuito de Rua (Foco em Precisão)'}
+                          {CIRCUITS[simGpIdx]?.type === 'técnico' && '📐 Circuito Técnico (Curvas Sombrias)'}
+                          {CIRCUITS[simGpIdx]?.type === 'clássico' && '🏎️ Tradicional Equilibrado'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#888] block uppercase font-mono text-[9px] mb-0.5">Condição Climática</span>
+                        <span className="text-white font-bold uppercase font-sans">
+                          {CIRCUITS[simGpIdx]?.isWet ? '🌧️ PISTA SE MOLHANDO (Chuva Intensa)' : '☀️ CLIMA SECO (Sol Radiante)'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#888] block uppercase font-mono text-[9px] mb-0.5">Vagas na Rodada</span>
+                        <span className="text-white font-bold font-mono">GP {simGpIdx + 1} de {CIRCUITS.length}</span>
+                      </div>
+                    </div>
+
+                    {/* Players grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {multiplayerPlayers.map(player => {
+                        const activeC = multiplayerCards[player.id];
+                        const strategy = multiplayerStrategies[player.id] || 'equilibrada';
+
+                        return (
+                          <div 
+                            key={player.id} 
+                            style={{ borderLeftColor: player.color }}
+                            className="bg-[#151515]/60 border border-[#222] border-l-4 p-5 rounded-md space-y-4 relative"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span 
+                                style={{ backgroundColor: player.color + '22', color: player.color }}
+                                className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold"
+                              >
+                                {player.teamName}
+                              </span>
+                              <span className="text-xs text-white font-bold">{player.name}</span>
+                            </div>
+
+                            {/* Select Strategy portion */}
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] uppercase font-mono text-neutral-400 block">
+                                Escolher Estratégia de Corrida:
+                              </label>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                {[
+                                  { id: 'equilibrada', label: '⚖️ Equilibrada', desc: 'Desempenho nominal e seguro.' },
+                                  { id: 'agressiva', label: '🚀 Agressivo', desc: '+7 Ritmo, risca DNF (-15 Confiab.)' },
+                                  { id: 'conservadora', label: '🛡️ Conservadora', desc: '-4 Ritmo, +22 Confiabilidade.' },
+                                  { id: 'climatica', label: '🌧️ Especialista', desc: '🌧️ +12 em pista molhada, senão -4.' },
+                                  { id: 'tecnica', label: '📐 Técnica', desc: '📐 +8 em Rua/Curva, -5 em Reta rápida.' }
+                                ].map(opt => (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() => setMultiplayerStrategies(prev => ({ ...prev, [player.id]: opt.id }))}
+                                    className={`p-2.5 rounded text-left border transition-all ${
+                                      strategy === opt.id
+                                        ? 'border-rose-600 bg-rose-950/20 text-white'
+                                        : 'border-[#222] bg-[#111] text-zinc-400 hover:border-[#333]'
+                                    }`}
+                                  >
+                                    <div className="font-bold text-[11px] mb-0.5">{opt.label}</div>
+                                    <div className="text-[9px] text-[#777] leading-tight font-sans">{opt.desc}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Support Card Portion */}
+                            <div className="pt-2 border-t border-[#222] space-y-2">
+                              {activeC && activeC.racesLeft > 0 ? (
+                                <div className="p-3 bg-neutral-900 border border-[#222] rounded flex justify-between items-center text-xs">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-amber-500 text-lg">💡</span>
+                                    <div>
+                                      <div className="font-bold text-white uppercase text-[10px]">
+                                        {BUFF_CARDS.find(b => b.id === activeC.cardId)?.name || activeC.cardId}
+                                      </div>
+                                      <div className="text-[9px] text-[#777]">Carta ativa para esta escuderia</div>
+                                    </div>
+                                  </div>
+                                  <span className="font-mono text-rose-500 font-bold bg-rose-950/20 px-2 py-0.5 rounded text-[10px]">
+                                    {activeC.racesLeft} {activeC.racesLeft === 1 ? 'GP restante' : 'GPs restantes'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] uppercase font-mono text-[#888] block">
+                                    Disparar Nova Carta (Dura 3 GPs):
+                                  </label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    {availableCards.map(card => (
+                                      <button
+                                        key={card.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setMultiplayerCards(prev => ({
+                                            ...prev,
+                                            [player.id]: { cardId: card.id, racesLeft: 3 }
+                                          }));
+                                          triggerToast(`💥 ${player.name} ativou buff ${card.name} por 3 corridas!`);
+                                        }}
+                                        className="p-2 border border-[#222] hover:border-[#444] bg-[#111] hover:bg-[#181818] rounded text-left transition-all group relative animate-fade-in"
+                                      >
+                                        <div className="font-mono font-bold text-[10px] text-zinc-300 group-hover:text-rose-500 uppercase line-clamp-1">
+                                          {card.name}
+                                        </div>
+                                        <div className="text-[8px] text-[#666] leading-tight font-sans mt-0.5 line-clamp-2">
+                                          {card.description}
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* MarioKart yo-yo Monte Carlo mode */}
+                    <div className="bg-[#111] p-4 rounded border border-[#222] flex items-center justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xl">🍄</span>
+                          <span className="text-white font-mono font-bold text-xs uppercase tracking-wider">
+                            Especial MarioKart 2026: CURVA DE MONTECARLO (Modo Yo-Yo)
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[#777] max-w-2xl font-sans">
+                          Efeito Yo-Yo Rubberband! Ativa um simulador probabilístico de Monte Carlo que re-embaralha o grid ciclicamente durante a corrida. Líderes estão sujeitos a Cascos Azuis e retardatários recebem Bullet Bills!
+                        </p>
+                      </div>
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMarioKartMode(!marioKartMode);
+                            triggerToast(marioKartMode ? '🔴 MarioKart 2026 Inativo' : '🟢 MarioKart 2026 ATIVADO! Monte Carlo liberado!');
+                          }}
+                          className={`px-4 py-2 text-xs font-mono font-bold rounded uppercase transition-all ${
+                            marioKartMode
+                              ? 'bg-rose-600 text-white hover:bg-rose-700'
+                              : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                          }`}
+                        >
+                          {marioKartMode ? 'ATIVADO 🟢' : 'DESATIVADO 🔴'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleConfirmMultiplayerStrategy}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-mono font-extrabold text-xs px-6 py-3 rounded uppercase tracking-wider transition-all flex items-center space-x-2 shadow-lg"
+                      >
+                        <span>🚀 Gravar Estratégia e Iniciar Qualificação</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* PHASE 1: CIRCUIT PREVIEW / INTRO */}
+                {simPhase === 'intro' && (
+                  <div className="bg-[#0A0A0A] border border-[#222] p-8 rounded-lg flex flex-col md:flex-row justify-between items-center gap-6 relative overflow-hidden">
+                    <div className="absolute -bottom-10 -right-10 opacity-5">
+                      <Trophy className="h-64 h-64 text-white" />
+                    </div>
+                    
+                    <div className="space-y-4 max-w-xl z-10">
+                      <h3 className="text-amber-400 font-mono text-xs uppercase tracking-widest leading-none font-bold">FOCANDO PROVA DO CALENDÁRIO</h3>
+                      <h4 className="text-3xl font-display font-black text-white leading-tight uppercase">
+                        GP {CIRCUITS[simGpIdx]?.name.replace('Grande Prêmio ', '')}
+                      </h4>
+                      <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                        Este circuito é conhecido pelas exigências de <strong className="text-white bg-[#111] px-1 py-0.5 rounded font-mono font-bold">{CIRCUITS[simGpIdx]?.type?.toUpperCase()}</strong>. Ajuste os carros do seu paddock! Os pneus e combustíveis estão prontos para a sessão de Classificação Flying Laps para definir o grid oficial.
+                      </p>
+                      
+                      <div className="flex gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setSimPhase('quali')}
+                          className="px-5 py-3 bg-[#FF1801] hover:bg-red-700 text-white font-display font-bold text-xs uppercase tracking-wider rounded-sm shadow-lg flex items-center space-x-2 cursor-pointer transition-all active:scale-95"
+                        >
+                          <Gauge className="h-4 w-4" />
+                          <span>ABRIR SESSÃO DE CLASSIFICAÇÃO</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="w-full md:w-64 bg-zinc-950 p-4 rounded border border-neutral-800 space-y-3 z-10 font-mono text-[11px]">
+                      <div className="text-neutral-400 uppercase tracking-wider border-b border-neutral-900 pb-1 font-bold">DETALHES DA TELEMETRIA</div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Recorde de Volta:</span>
+                        <span className="text-white font-bold">1:{10 + (simGpIdx * 2)}.{312 + (simGpIdx * 10)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Extensão:</span>
+                        <span className="text-white font-bold">{(4.3 + (simGpIdx * 0.4)).toFixed(3)} km</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Voltas Simuladas:</span>
+                        <span className="text-green-500 font-bold">5 Voltas Curtas</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PHASE 2: QUALIFYING SESSION */}
+                {simPhase === 'quali' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    
+                    {/* Leaderboard left */}
+                    <div className="lg:col-span-7 bg-[#0A0A0A] border border-neutral-800 p-4 rounded-md space-y-3">
+                      <div className="flex justify-between items-center border-b border-neutral-900 pb-2">
+                        <h3 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center space-x-1.5">
+                          <Gauge className="h-4 w-4 text-sky-400 animate-pulse" />
+                          <span>Tempos de Voltas - Classificação</span>
+                        </h3>
+                        <span className="text-[10px] font-mono text-neutral-400">
+                          {simQualiActiveDriverIndex} de {simQualiLeaderboard.length} Pilotos Classificados
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
+                        {simQualiLeaderboard.map((d, index) => {
+                          const isActive = simQualiActiveDriverIndex === index;
+                          const isTeamUserDriver = isTeamUser(d.team);
+                          return (
+                            <div
+                              key={d.driver}
+                              className={`flex items-center justify-between p-2 rounded transition-all text-xs ${
+                                isActive 
+                                  ? 'bg-[#FF1801]/10 border border-[#FF1801] shadow-[0_0_10px_rgba(255,24,1,0.1)]' 
+                                  : 'bg-black/50 border border-neutral-900'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-2.5 truncate">
+                                <span className="font-mono font-bold text-neutral-500 w-5">P{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
+                                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
+                                <span className={`font-mono font-bold truncate ${isTeamUserDriver ? 'text-amber-400' : 'text-white'}`}>
+                                  {d.driver}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 opacity-80 truncate">{d.team}</span>
+                              </div>
+
+                              <div className="flex items-center space-x-3 text-[10px] font-mono font-medium">
+                                <div className="flex space-x-1">
+                                  <span className={`px-1.5 rounded-sm ${
+                                    d.qualiCompleted 
+                                      ? (d.s1Status === 'purple' ? 'bg-fuchsia-950/40 text-fuchsia-400 border border-fuchsia-800/40' : d.s1Status === 'green' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40' : 'bg-neutral-900 border border-neutral-800 text-neutral-400') 
+                                      : 'bg-neutral-950 text-neutral-700'
+                                  }`}>S1</span>
+                                  <span className={`px-1.5 rounded-sm ${
+                                    d.qualiCompleted 
+                                      ? (d.s2Status === 'purple' ? 'bg-fuchsia-950/40 text-fuchsia-400 border border-fuchsia-800/40' : d.s2Status === 'green' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40' : 'bg-neutral-900 border border-neutral-800 text-neutral-400') 
+                                      : 'bg-neutral-950 text-neutral-700'
+                                  }`}>S2</span>
+                                  <span className={`px-1.5 rounded-sm ${
+                                    d.qualiCompleted 
+                                      ? (d.s3Status === 'purple' ? 'bg-fuchsia-950/40 text-fuchsia-400 border border-fuchsia-800/40' : d.s3Status === 'green' ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40' : 'bg-neutral-900 border border-neutral-800 text-neutral-400') 
+                                      : 'bg-neutral-950 text-neutral-700'
+                                  }`}>S3</span>
+                                </div>
+                                <span className="text-white font-bold min-w-[55px] text-right">
+                                  {d.qualiCompleted ? d.qualiTimeStr : 'RETA OUT'}
+                                </span>
+                                <span className="text-zinc-500 text-[9px] min-w-[45px] text-right font-bold">
+                                  {d.qualiCompleted ? d.qualiDiff : '--'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Onboard fly-lap details */}
+                    <div className="lg:col-span-5 bg-neutral-950 border border-neutral-800 p-4 rounded-md flex flex-col justify-between space-y-4">
+                      <div>
+                        <div className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider block border-b border-neutral-900 pb-2 mb-2">
+                          🔴 CÂMERA DE MURETA: TELEMETRIA AO VIVO
+                        </div>
+
+                        {simQualiActiveDriverIndex < simQualiLeaderboard.length ? (
+                          <div className="space-y-4 font-mono">
+                            <div className="p-3 bg-zinc-900/60 rounded border border-neutral-800">
+                              <span className="text-[9px] text-zinc-500">PILOTO NA CORRIDA ATIVA</span>
+                              <div className="text-base text-white font-bold flex items-center space-x-2 mt-1">
+                                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: simQualiLeaderboard[simQualiActiveDriverIndex]?.color }} />
+                                <span>{simQualiLeaderboard[simQualiActiveDriverIndex]?.driver}</span>
+                              </div>
+                              <span className="text-[10px] text-zinc-400">{simQualiLeaderboard[simQualiActiveDriverIndex]?.team}</span>
+                            </div>
+
+                            {/* Osculating values */}
+                            <div className="grid grid-cols-2 gap-2 text-[10px] bg-black/40 p-3 rounded border border-neutral-900">
+                              <div>
+                                <span className="text-zinc-500">VELOCIDADE:</span>
+                                <div className="text-sm font-bold text-white mt-0.5">
+                                  {simTelemetryValues[simQualiLeaderboard[simQualiActiveDriverIndex]?.driver]?.speed || 292} <span className="text-[10px] font-normal text-zinc-400">KM/H</span>
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500">ROTAÇÃO RPM:</span>
+                                <div className="text-sm font-bold text-white mt-0.5">
+                                  {simTelemetryValues[simQualiLeaderboard[simQualiActiveDriverIndex]?.driver]?.rpm || 12450} <span className="text-[10px] font-normal text-zinc-400">RPM</span>
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500">MARCHA:</span>
+                                <div className="text-sm font-bold text-[#FF1801] mt-0.5">
+                                  G{simTelemetryValues[simQualiLeaderboard[simQualiActiveDriverIndex]?.driver]?.gear || 7}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-zinc-500">ASAS DRS:</span>
+                                <span className={`px-1.5 py-0.5 text-[8px] font-bold rounded mt-0.5 inline-block ${
+                                  simTelemetryValues[simQualiLeaderboard[simQualiActiveDriverIndex]?.driver]?.drs 
+                                    ? 'bg-green-500/10 text-green-400 border border-green-500/30' 
+                                    : 'bg-neutral-900 text-neutral-500'
+                                }`}>
+                                  {simTelemetryValues[simQualiLeaderboard[simQualiActiveDriverIndex]?.driver]?.drs ? 'ATIVADO' : 'INATIVO'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Dual mini bar */}
+                            <div className="space-y-2 bg-[#1c1c1c]/20 p-3 rounded border border-neutral-900">
+                              <div>
+                                <div className="flex justify-between text-[9px] text-zinc-400 font-bold mb-0.5">
+                                  <span>ACELERADOR (Throttle)</span>
+                                  <span className="text-green-500 font-bold">100%</span>
+                                </div>
+                                <div className="h-2 bg-neutral-900 border border-neutral-800 rounded-sm overflow-hidden">
+                                  <div className="h-full bg-emerald-500" style={{ width: '100%' }} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between text-[9px] text-zinc-400 font-bold mb-0.5">
+                                  <span>FREIO (Brake Pressure)</span>
+                                  <span className="text-red-500 font-bold">0%</span>
+                                </div>
+                                <div className="h-2 bg-neutral-900 border border-neutral-800 rounded-sm overflow-hidden">
+                                  <div className="h-full bg-red-500" style={{ width: '0%' }} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-10 text-neutral-500 italic text-xs font-mono">
+                            Qualificando concluído. Alinhando motores!
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Control proceed at quali end */}
+                      {simQualiActiveDriverIndex >= simQualiLeaderboard.length && (
+                        <button
+                          type="button"
+                          onClick={startRaceLightsAndGrid}
+                          className="w-full py-3 bg-green-500 hover:bg-green-600 hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] text-white font-display font-bold text-xs uppercase tracking-widest rounded-sm transition-all"
+                        >
+                          Ir para o Grid de Largada 🚦
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* PHASE 3: COMPLETED QUALIFYING SUMMARY */}
+                {simPhase === 'finished_quali' && (
+                  <div className="space-y-6">
+                    <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-md text-amber-200 text-xs font-mono flex flex-col sm:flex-row justify-between items-center gap-4">
+                      <div className="space-y-1">
+                        <div className="font-bold flex items-center gap-1.5 text-sm uppercase">🏆 POLE POSITION: {simQualiLeaderboard[0]?.driver} do time {simQualiLeaderboard[0]?.team}</div>
+                        <p className="text-neutral-300 font-sans">Velocidade absoluta garantindo a mureta interna da turn 1. Todos os 12 pilotos estão prontos!</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={startRaceLightsAndGrid}
+                        className="px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white text-xs font-mono font-bold tracking-widest uppercase rounded cursor-pointer transition-all active:scale-95 shadow-md flex items-center gap-1.5 shrink-0"
+                      >
+                        <Gauge className="h-4 w-4" />
+                        <span>LARGAR CORRIDA COLETIVA</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-[#0A0A0A] border border-[#222] p-4 rounded-md">
+                      <h3 className="font-mono text-zinc-400 text-xs uppercase tracking-widest pb-2 border-b border-neutral-900 mb-2 font-bold">GRID OFICIAL DE PROVA DE TELEMETRIA</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+                        {simQualiLeaderboard.map((qd, index) => (
+                          <div key={qd.driver} className="flex justify-between items-center bg-black/40 p-2 border border-neutral-900 rounded-sm">
+                            <div className="flex items-center space-x-2.5 truncate">
+                              <span className="font-bold text-neutral-500">G{index + 1}</span>
+                              <div className="h-2 w-2 rounded-full" style={{ backgroundColor: qd.color }} />
+                              <span className="truncate text-white font-bold">{qd.driver}</span>
+                            </div>
+                            <span className="text-zinc-400 font-bold">{qd.qualiTimeStr}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PHASE 4: RACE START LIGHTS */}
+                {simPhase === 'race_lights' && (
+                  <div className="bg-black/80 border border-neutral-900 p-8 rounded-lg text-center space-y-6 max-w-md mx-auto">
+                    <span className="text-[10px] font-mono text-neutral-400 block tracking-widest uppercase">LARGADA AUTORIZADA DO GP</span>
+                    
+                    <div className="flex justify-center space-x-3 py-6 bg-[#0c0c0c] rounded border border-neutral-850">
+                      {[1, 2, 3, 4, 5].map((lightNum) => {
+                        const isOn = simLightsCount >= lightNum;
+                        return (
+                          <div key={lightNum} className="flex flex-col items-center space-y-2">
+                            <div className="bg-[#1C0506] border border-[#331112] p-1 rounded-full">
+                              <div className={`h-10 w-10 rounded-full transition-all duration-100 ${
+                                isOn 
+                                  ? 'bg-[#FF1801] shadow-[0_0_20px_#FF1801] border border-[#FF1801]' 
+                                  : 'bg-stone-900 border border-stone-950'
+                              }`} />
+                            </div>
+                            <div className="h-1.5 w-1.5 rounded-full bg-[#111]" />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-xs font-mono text-[#FF1801] uppercase tracking-wider animate-pulse">ALINHANDO CARROS NO SETOR...</p>
+                  </div>
+                )}
+
+                {/* PHASE 5: LIVE RACE */}
+                {simPhase === 'race' && (
+                  <div className="space-y-6">
+                    
+                    {/* Blink yellow flag banner */}
+                    {simYellowFlag && (
+                      <div className="bg-yellow-500/10 border border-yellow-500 animate-pulse text-yellow-400 text-xs font-mono uppercase tracking-widest p-3.5 rounded flex items-center justify-between font-bold">
+                        <div className="flex items-center space-x-2">
+                          <AlertTriangle className="h-4 w-4 text-yellow-400 shrink-0 select-none animate-bounce" />
+                          <span>🟡 BANDEIRA AMARELA NO SETOR: {simYellowFlagMessage}</span>
+                        </div>
+                        <span className="text-[9px] bg-yellow-500/20 px-2 py-0.5 rounded text-yellow-300">SLOW CAR RECOVERY</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      
+                      {/* Live standings sheet Left */}
+                      <div className="lg:col-span-8 bg-[#0A0A0A] border border-neutral-800 p-4 rounded-md space-y-3">
+                        <div className="flex justify-between items-center border-b border-neutral-900 pb-2">
+                          <h3 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center space-x-1.5">
+                            <Gauge className="h-4 w-4 text-emerald-400 animate-pulse" />
+                            <span>Tabela de Corrida - Volta {simRaceLap}/5</span>
+                          </h3>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
+                          {simRaceLeaderboard.map((d, index) => {
+                            const isTeamUserDriver = isTeamUser(d.team);
+                            const tValues = simTelemetryValues[d.driver];
+                            return (
+                              <div
+                                key={d.driver}
+                                className={`flex items-center justify-between p-2 rounded border text-xs leading-none transition-all ${
+                                  d.isDnf 
+                                    ? 'bg-red-950/10 border-red-900/30 opacity-70' 
+                                    : 'bg-black/50 border-neutral-900 hover:border-neutral-800'
+                                }`}
+                              >
+                                <div className="flex items-center space-x-2.5 truncate w-1/2">
+                                  <span className="font-mono font-black text-neutral-400 w-5">P{index + 1 < 10 ? `0${index + 1}` : index + 1}</span>
+                                  <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                  <span className={`font-mono font-bold truncate ${isTeamUserDriver ? 'text-amber-400' : 'text-white'}`}>
+                                    {d.driver.split(' ').pop() || d.driver}
+                                  </span>
+                                  <span className="text-[10px] text-neutral-500 truncate select-none hidden sm:inline">({d.team})</span>
+                                </div>
+
+                                <div className="flex items-center space-x-4 font-mono text-[10px] text-right">
+                                  {d.isDnf ? (
+                                    <span className="text-[#FF1801] font-bold uppercase tracking-widest text-[9px] px-1.5 py-0.5 bg-red-950/20 border border-red-800/20 rounded">
+                                      OUT
+                                    </span>
+                                  ) : (
+                                    <div className="flex items-center space-x-3 text-neutral-300">
+                                      {tValues?.drs && (
+                                        <span className="px-1 bg-green-500/10 text-green-400 border border-green-500/30 text-[8px] font-bold rounded">
+                                          DRS
+                                        </span>
+                                      )}
+                                      <span className="text-zinc-500 text-[9px] font-bold">
+                                        G{tValues?.gear || 7}
+                                      </span>
+                                      <span className="text-white font-bold w-[50px]">
+                                        {tValues?.speed || 280} km/h
+                                      </span>
+                                      <span className="text-zinc-600 hidden sm:inline font-bold w-[35px]">
+                                        {tValues?.temp || 112}°C
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Right commentators / spotlight */}
+                      <div className="lg:col-span-4 space-y-4">
+                        
+                        {/* Highlights Spotlight Card */}
+                        <div className="p-4 bg-zinc-950 border border-neutral-800 rounded-md font-mono space-y-3">
+                          <div className="text-[9px] text-zinc-500 tracking-wider uppercase font-bold border-b border-neutral-900 pb-1.5">
+                            ⚡ PILOTO DESTAQUE DA SESSÃO
+                          </div>
+                          
+                          {simRaceLeaderboard[0] ? (
+                            <div className="space-y-2 text-xs">
+                              <div className="flex items-center space-x-2">
+                                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: simRaceLeaderboard[0]?.color }} />
+                                <div>
+                                  <div className="text-white font-bold">{simRaceLeaderboard[0]?.driver}</div>
+                                  <div className="text-[10px] text-zinc-400">{simRaceLeaderboard[0]?.team}</div>
+                                </div>
+                              </div>
+
+                              <div className="bg-black/50 p-2.5 rounded border border-neutral-900 space-y-1 text-[10px]">
+                                <div className="flex justify-between">
+                                  <span className="text-neutral-500">Líder Gaps:</span>
+                                  <span className="text-emerald-400 font-bold">INTERVALO P1</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-neutral-500">Giros:</span>
+                                  <span className="text-white font-bold">{simTelemetryValues[simRaceLeaderboard[0]?.driver]?.rpm || 13500} RPM</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-neutral-600 italic">Preenchendo alinhamento...</p>
+                          )}
+                        </div>
+
+                        {/* Broadcast terminal box */}
+                        <div className="p-4 bg-black border border-neutral-850 rounded-md space-y-2">
+                          <div className="text-[10px] font-mono text-zinc-500 font-bold uppercase tracking-widest border-b border-neutral-900 pb-1.5">
+                            🎙️ TRANSMISSÃO DA MURETA
+                          </div>
+
+                          <div className="space-y-2 max-h-[160px] overflow-y-auto font-mono text-[10px] leading-relaxed text-zinc-400 pr-1 select-none">
+                            {simTickerLogs.map((lg, lgIdx) => (
+                              <div key={lgIdx} className="border-b border-neutral-950 pb-1.5 last:border-0 hover:text-white transition-colors">
+                                {lg}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+                {/* PHASE 6: COMPLETED RACE & PODIUM SUMMARY */}
+                {simPhase === 'finished_race' && (
+                  <div className="space-y-6">
+                    
+                    {/* Big Podium Box */}
+                    <div className="bg-[#0A0A0A] border border-[#222] p-6 rounded-lg text-center relative overflow-hidden">
+                      <h3 className="text-amber-400 font-mono text-xs uppercase tracking-widest leading-none mb-4 font-bold select-none">
+                        CELEBRAÇÃO DO PÓDIO DE TELEMETRIA
+                      </h3>
+
+                      <div className="flex justify-center items-end space-x-6 sm:space-x-10 py-6 max-w-md mx-auto">
+                        
+                        {/* 2nd place stand */}
+                        {simRaceLeaderboard[1] && (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[10px] text-zinc-300 font-mono font-semibold max-w-[80px] truncate leading-tight mb-1 text-center" title={simRaceLeaderboard[1].driver}>
+                              {simRaceLeaderboard[1].driver.split(' ').pop()}
+                            </span>
+                            <span className="text-[8px] text-zinc-500 font-mono mb-2 truncate max-w-[80px]">{simRaceLeaderboard[1].team}</span>
+                            <div className="w-16 sm:w-20 bg-neutral-800 border border-neutral-700 h-16 rounded-t shadow-md flex flex-col justify-center items-center">
+                              <span className="text-2xl font-mono font-black text-zinc-300">2</span>
+                              <span className="text-[9px] text-zinc-400 font-mono leading-none">PRATA</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 1st place stand */}
+                        {simRaceLeaderboard[0] && (
+                          <div className="flex flex-col items-center scale-105">
+                            <Trophy className="h-6 w-6 text-amber-500 fill-current mb-1 animate-pulse" />
+                            <span className="text-xs text-amber-400 font-mono font-black max-w-[90px] truncate leading-tight mb-1 text-center" title={simRaceLeaderboard[0].driver}>
+                              {simRaceLeaderboard[0].driver.split(' ').pop()}
+                            </span>
+                            <span className="text-[8px] text-amber-500/80 font-mono mb-2 truncate max-w-[90px]">{simRaceLeaderboard[0].team}</span>
+                            <div className="w-20 sm:w-24 bg-amber-500/10 border-2 border-amber-500 h-24 rounded-t shadow-lg flex flex-col justify-center items-center">
+                              <span className="text-3xl font-mono font-black text-amber-400">1</span>
+                              <span className="text-[10px] text-amber-300 font-mono leading-none">VENCEDOR</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3rd place stand */}
+                        {simRaceLeaderboard[2] && (
+                          <div className="flex flex-col items-center">
+                            <span className="text-[10px] text-orange-300 font-mono font-semibold max-w-[80px] truncate leading-tight mb-1 text-center" title={simRaceLeaderboard[2].driver}>
+                              {simRaceLeaderboard[2].driver.split(' ').pop()}
+                            </span>
+                            <span className="text-[8px] text-zinc-500 font-mono mb-2 truncate max-w-[80px]">{simRaceLeaderboard[2].team}</span>
+                            <div className="w-16 sm:w-20 bg-amber-900/40 border border-amber-900/50 h-12 rounded-t shadow-md flex flex-col justify-center items-center">
+                              <span className="text-xl font-mono font-black text-amber-600">3</span>
+                              <span className="text-[9px] text-amber-700 font-mono leading-none">BRONZE</span>
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+
+                    {/* Breakdown points list */}
+                    <div className="bg-[#050505] border border-neutral-900 p-4 rounded text-xs font-mono">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-widest pb-2 border-b border-neutral-900 mb-2 font-bold select-none">
+                        TABELA COMPLETA DE PONTOS DESTE GP
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {simulationResult.raceResults[simGpIdx]?.positions.map((p: any, pIdx: number) => (
+                          <div key={p.driver} className="p-2 bg-zinc-950/40 border border-neutral-900/60 rounded flex justify-between items-center text-[11px] leading-none">
+                            <div className="flex items-center space-x-2 truncate">
+                              <span className="font-bold text-zinc-500">P{pIdx + 1}</span>
+                              <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                              <span className="text-white font-bold truncate">{p.driver.split(' ').pop()}</span>
+                            </div>
+                            <span className={`font-bold ${p.points > 0 ? 'text-amber-400' : 'text-neutral-500'}`}>
+                              {p.dnf ? 'DNF' : `+${p.points} PTS`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Proceed stage selectors */}
+                    <div className="flex gap-4">
+                      {simGpIdx < CIRCUITS.length - 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Proceed to next race index
+                            const nextGpSim = simGpIdx + 1;
+                            handleStartGP(nextGpSim);
+                          }}
+                          className="w-full py-4 bg-green-500 hover:bg-green-600 hover:shadow-[0_0_20px_rgba(34,197,94,0.3)] text-white font-display font-bold text-xs uppercase tracking-widest rounded-sm transition-all text-center cursor-pointer active:scale-95 animate-bounce block"
+                        >
+                          Confirmar Próxima Etapa: GP de {CIRCUITS[simGpIdx + 1]?.name?.replace('Grande Prêmio ', '')} ➡️
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleShowFinalResults}
+                          className="w-full py-4 bg-[#FF1801] hover:bg-red-700 hover:shadow-[0_0_25px_rgba(255,24,1,0.4)] text-white font-display font-bold text-xs uppercase tracking-widest rounded-sm transition-all text-center cursor-pointer active:scale-95 animate-bounce block"
+                        >
+                          🏆 FINALIZAR CAMPEONATO & VER CLASSIFICAÇÃO GERAL 🏆
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* GP CALENDAR SEQUENCER PROGRESS INDICATOR */}
+                <div className="border-t border-[#1C1C1C] pt-5 space-y-4 font-mono">
+                  <div className="flex justify-between items-center text-[9px] text-[#555] font-bold">
+                    <span>PROGRESSO GERAL DO CALENDÁRIO MUNDIAL ({CIRCUITS.length} ETAPAS)</span>
+                    <span>GP {simGpIdx + 1} DE 8 ATIVO</span>
+                  </div>
+
+                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                    {CIRCUITS.map((rc, idx) => {
+                      const isCompeted = idx < simGpIdx;
+                      const isNow = idx === simGpIdx;
+                      const isUpcoming = idx > simGpIdx;
+                      const winnerOfGp = isCompeted && simulationResult?.raceResults[idx]?.podium[0];
+
+                      return (
+                        <div
+                          key={rc.name}
+                          className={`p-2 rounded border text-left flex flex-col justify-between h-20 transition-all ${
+                            isNow
+                              ? 'border-[#FF1801] bg-[#FF1801]/10 scale-102 shadow-[0_0_10px_rgba(255,24,1,0.15)] text-white'
+                              : isCompeted
+                              ? 'border-emerald-500/20 bg-emerald-500/5 text-gray-400'
+                              : 'border-[#1C1C1C] bg-black/40 text-gray-700'
+                          }`}
+                        >
+                          <div>
+                            <span className="text-[7px] font-bold block mb-0.5 text-zinc-500">
+                              ETAPA {idx + 1}
+                            </span>
+                            <span className="block text-[10px] font-sans font-extrabold truncate text-white leading-tight">
+                              {rc.name.replace('Grande Prêmio ', 'GP ')}
+                            </span>
+                          </div>
+
+                          <div>
+                            {isNow && (
+                              <span className="text-[8px] text-[#FF1801] font-bold flex items-center gap-1 animate-pulse">
+                                <span className="h-1.5 w-1.5 bg-[#FF1801] rounded-full"></span>
+                                <span>LIVE</span>
+                              </span>
+                            )}
+
+                            {isCompeted && winnerOfGp && (
+                              <div className="text-[9px] text-emerald-400 font-bold truncate flex items-center space-x-1">
+                                <Trophy className="h-3 w-3 inline text-amber-500 shrink-0" />
+                                <span className="truncate">
+                                  {typeof winnerOfGp === 'string'
+                                    ? (winnerOfGp.split(' ').pop() || winnerOfGp)
+                                    : (winnerOfGp.driver ? (winnerOfGp.driver.split(' ').pop() || winnerOfGp.driver) : 'Nenhum')}
+                                </span>
+                              </div>
+                            )}
+
+                            {isUpcoming && <span className="text-[8px] text-neutral-600 font-bold">AGUARDANDO</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* SUPPORT CARDS DOCKS PANEL IN REAL-TIME SIMULATION */}
+                <div className="border border-neutral-800 bg-neutral-950/60 p-4 rounded mt-6 space-y-4 text-left">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-neutral-900 pb-3">
                     <div>
-                      <h4 className="text-sm font-display font-medium text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                      <h4 className="text-xs font-display font-black text-amber-400 flex items-center gap-1.5 uppercase tracking-wider select-none">
                         <Sparkles className="h-4 w-4 text-amber-400 animate-pulse" />
                         Paddock Command: Cartas de Suporte
                       </h4>
-                      <p className="text-[11px] text-neutral-400 font-sans mt-0.5">
-                        {simActiveRaceIdx >= 0 
-                          ? `Ative agora no GP corrente: ${CIRCUITS[simActiveRaceIdx]?.name}`
+                      <p className="text-[10px] text-neutral-400 font-sans mt-0.5">
+                        {simGpIdx >= 0 
+                          ? `Ative um Card de Buff no GP ativo (${CIRCUITS[simGpIdx]?.name}) para recalcular instantaneamente os tempos e a classificação e impulsionar seu time!`
                           : "Aguarde o início das etapas para injetar telemetria na corrida ativa!"}
                       </p>
                     </div>
-                    {difficultyMode === 'underdog' && (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-200 border border-amber-500/30 font-bold uppercase tracking-widest font-mono shrink-0">
-                        UNDERDOG ADVANTAGE 🐕
-                      </span>
-                    )}
                   </div>
 
                   {availableCards.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {availableCards.map((card) => {
                         const IconComponent = IconMap[card.icon] || Zap;
-                        const isSimActive = simActiveRaceIdx >= 0 && !simRaceCompleted;
+                        const isSimActive = simGpIdx >= 0 && simPhase === 'race';
                         return (
                           <div
                             key={card.id}
-                            className={`flex flex-col justify-between p-3.5 rounded border ${card.color} transition-all relative group overflow-hidden ${
+                            className={`flex flex-col justify-between p-3 rounded border ${card.color} transition-all relative group overflow-hidden ${
                               isSimActive 
-                                ? 'hover:scale-[1.02] hover:border-white/40 cursor-pointer shadow-lg' 
-                                : 'opacity-50 cursor-not-allowed'
+                                ? 'hover:scale-[1.01] hover:border-white/30 cursor-pointer shadow-md' 
+                                : 'opacity-40 cursor-not-allowed select-none'
                             }`}
                             onClick={() => {
                               if (!isSimActive) {
-                                triggerToast('⚠️ Aguarde a largada das corridas para ativar os buffs!');
+                                triggerToast('⚠️ Os buffs devem ser injetados exclusivamente durante a corrida ao vivo para recalculas os tempos em tempo real!');
                                 return;
                               }
                               setSelectedCardToUse(card);
@@ -2649,19 +4799,19 @@ Jogue agora em: ${window.location.href}`;
                               playBeep(440, 0.1);
                             }}
                           >
-                            <div className="space-y-1.5 min-h-[70px]">
+                            <div className="space-y-1.5 min-h-[60px]">
                               <div className="flex justify-between items-start gap-1">
-                                <span className="font-display font-bold text-xs uppercase leading-tight tracking-wide">{card.name}</span>
-                                <IconComponent className="h-4 w-4 shrink-0 opacity-80" />
+                                <span className="font-display font-black text-xs uppercase leading-tight tracking-wide">{card.name}</span>
+                                <IconComponent className="h-4 w-4 shrink-0 opacity-85" />
                               </div>
-                              <p className="text-[10px] text-neutral-300 leading-normal font-sans">{card.description}</p>
+                              <p className="text-[10px] text-neutral-300 leading-tight font-sans">{card.description}</p>
                             </div>
 
                             <button
                               disabled={!isSimActive}
-                              className={`w-full mt-3 py-1.5 text-[9px] font-mono rounded tracking-widest uppercase font-bold transition-all ${
+                              className={`w-full mt-2.5 py-1.5 text-[9px] font-mono rounded tracking-widest uppercase font-bold transition-all ${
                                 isSimActive 
-                                  ? 'bg-white/10 hover:bg-white text-white hover:text-black hover:shadow-md cursor-pointer' 
+                                  ? 'bg-white/10 hover:bg-white text-white hover:text-black hover:shadow cursor-pointer' 
                                   : 'bg-neutral-900 text-neutral-600'
                               }`}
                             >
@@ -2672,36 +4822,23 @@ Jogue agora em: ${window.location.href}`;
                       })}
                     </div>
                   ) : (
-                    <div className="text-center py-4 text-neutral-500 bg-neutral-900/30 rounded border border-neutral-800/40">
+                    <div className="text-center py-4 text-neutral-500 bg-neutral-900/30 rounded border border-neutral-850">
                       <p className="text-xs font-mono">⚠️ Todas as cartas de suporte foram consumidas neste campeonato!</p>
                     </div>
                   )}
 
-                  {/* Histórico Recente de Buffs Aplicados */}
                   {buffHistory.length > 0 && (
-                    <div className="mt-3 flex flex-col gap-1.5 pt-3 border-t border-neutral-900 text-[10px] font-mono text-neutral-400">
-                      <span className="uppercase text-neutral-500 font-bold text-[9px] tracking-wider">Histórico de Ativações:</span>
+                    <div className="mt-3 flex flex-col gap-1.5 pt-3 border-t border-neutral-900 text-[9px] font-mono text-neutral-400">
+                      <span className="uppercase text-neutral-500 font-bold text-[9px] tracking-wider select-none">Histórico de Ativações nesta Temporada:</span>
                       {buffHistory.map((hist, hIdx) => (
                         <div key={hIdx} className="flex gap-2 items-center bg-emerald-950/20 px-2 py-1.5 rounded border border-emerald-950/30 text-emerald-400">
-                          <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
+                          <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           <span>{hist}</span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-
-                {/* Botão de feedback para acelerar e ir para resultados */}
-                {simRaceCompleted && (
-                  <button
-                    id="btn_view_grand_results"
-                    onClick={handleShowFinalResults}
-                    className="w-full bg-[#FF1801] hover:bg-red-700 hover:shadow-[0_0_20px_rgba(255,24,1,0.4)] text-white font-display font-bold p-4 rounded-sm flex items-center justify-center space-x-2 transition-all active:scale-95 animate-bounce mt-4 cursor-pointer tracking-widest uppercase text-sm"
-                  >
-                    <Trophy className="h-5 w-5 text-amber-400 fill-current" />
-                    <span>VER CLASSIFICAÇÃO & RESULTADOS GERAIS</span>
-                  </button>
-                )}
 
               </div>
             )}
@@ -2819,9 +4956,13 @@ Jogue agora em: ${window.location.href}`;
                             key={`standing-${drv.driver}-${drv.team}-${idx}`}
                             className={`border-b border-black/40 last:border-0 ${
                               drv.isUser 
-                                ? 'bg-[#FF1801]/10 border-l-2 border-[#FF1801] text-white font-bold' 
+                                ? 'text-white font-bold' 
                                 : ''
                             }`}
+                            style={drv.isUser ? {
+                              backgroundColor: `${drv.color || '#FF1801'}15`,
+                              borderLeft: `2px solid ${drv.color || '#FF1801'}`
+                            } : undefined}
                           >
                             <td className="py-2.5 px-1 font-bold">{idx + 1}</td>
                             <td className="text-white max-w-[160px] truncate flex items-center space-x-1.5 py-1">
@@ -2905,13 +5046,17 @@ Jogue agora em: ${window.location.href}`;
                             key={tm.team}
                             className={`border-b border-black/40 last:border-0 ${
                               tm.isUser 
-                                ? 'bg-[#FF1801]/10 border-l-2 border-[#FF1801] text-white font-bold' 
+                                ? 'text-white font-bold' 
                                 : ''
                             }`}
+                            style={tm.isUser ? {
+                              backgroundColor: `${tm.color || '#FF1801'}15`,
+                              borderLeft: `2px solid ${tm.color || '#FF1801'}`
+                            } : undefined}
                           >
                             <td className="py-3 px-1 font-bold">{idx + 1}</td>
                             <td className="text-white">{tm.team}</td>
-                            <td className="text-right text-[#FF1801] font-bold">{tm.points}</td>
+                            <td className="text-right font-bold" style={{ color: tm.color || '#FF1801' }}>{tm.points}</td>
                           </tr>
                         );
                       })}
@@ -2921,33 +5066,79 @@ Jogue agora em: ${window.location.href}`;
 
                 {/* Exibição da Equipe Completa Escolhida */}
                 <div className="border-t border-[#222] pt-4 mt-6">
-                  <span className="text-[10px] uppercase font-mono text-gray-400 block tracking-wider mb-2">SEU TIME CONTRATADO EM PISTA:</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">PILOTO 1:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['driver_1']?.name || 'Vazio'}</span>
-                    </div>
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">PILOTO 2:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['driver_2']?.name || 'Vazio'}</span>
-                    </div>
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">CHASSI:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['chassis']?.name || 'Vazio'}</span>
-                    </div>
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">ENGENHEIRO:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['engineer']?.name || 'Vazio'}</span>
-                    </div>
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">CHEFE:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['team_boss']?.name || 'Vazio'}</span>
-                    </div>
-                    <div className="bg-[#111] p-2 rounded border border-[#222]">
-                      <span className="text-[9px] text-gray-500 block font-mono">ESTRATEGISTA:</span>
-                      <span className="font-bold text-white truncate block font-display">{slots['strategist']?.name || 'Vazio'}</span>
-                    </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 gap-2">
+                    <span className="text-[10px] uppercase font-mono text-gray-400 block tracking-wider">SEU TIME CONTRATADO EM PISTA:</span>
+                    {isMultiplayer && (
+                      <div className="flex font-mono text-[10px] gap-1.5 items-center bg-black/40 px-2 py-1 rounded border border-neutral-800">
+                        <span className="text-neutral-500">Inspecionando:</span>
+                        <span className="font-bold flex items-center gap-1" style={{ color: getTeamColor(multiplayerPlayers[activeResultsPlayerIndex]?.teamName) }}>
+                          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: getTeamColor(multiplayerPlayers[activeResultsPlayerIndex]?.teamName) }}></span>
+                          {multiplayerPlayers[activeResultsPlayerIndex]?.teamName} ({multiplayerPlayers[activeResultsPlayerIndex]?.name})
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  
+                  {isMultiplayer && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {multiplayerPlayers.map((player, pIdx) => {
+                        const isInspected = pIdx === activeResultsPlayerIndex;
+                        return (
+                          <button
+                            key={player.id}
+                            onClick={() => {
+                              setActiveResultsPlayerIndex(pIdx);
+                              playBeep(440 + pIdx * 40, 0.05);
+                            }}
+                            className={`px-3 py-1 text-[10px] uppercase font-mono rounded cursor-pointer transition-all border ${
+                              isInspected
+                                ? 'bg-neutral-800 border-neutral-700 text-white font-semibold'
+                                : 'bg-black/30 border-neutral-900 text-neutral-400 hover:text-neutral-200'
+                            }`}
+                            style={{
+                              borderLeft: `3px solid ${player.color}`
+                            }}
+                          >
+                            {player.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {(() => {
+                    const currentInspectSlots = isMultiplayer
+                      ? (multiplayerPlayers[activeResultsPlayerIndex]?.slots || {})
+                      : slots;
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">PILOTO 1:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['driver_1']?.name || 'Vazio'}</span>
+                        </div>
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">PILOTO 2:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['driver_2']?.name || 'Vazio'}</span>
+                        </div>
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">CHASSI:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['chassis']?.name || 'Vazio'}</span>
+                        </div>
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">ENGENHEIRO:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['engineer']?.name || 'Vazio'}</span>
+                        </div>
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">CHEFE:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['team_boss']?.name || 'Vazio'}</span>
+                        </div>
+                        <div className="bg-[#111] p-2 rounded border border-[#222]">
+                          <span className="text-[9px] text-gray-500 block font-mono">ESTRATEGISTA:</span>
+                          <span className="font-bold text-white truncate block font-display">{currentInspectSlots['strategist']?.name || 'Vazio'}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -2994,26 +5185,27 @@ Jogue agora em: ${window.location.href}`;
                         height={36}
                         wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace', textTransform: 'uppercase' }}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="Seu Time"
-                        stroke="#FF1801"
-                        strokeWidth={3}
-                        dot={{ r: 4, stroke: '#FF1801', strokeWidth: 1.5, fill: '#050505' }}
-                        activeDot={{ r: 6, stroke: '#FF1801', strokeWidth: 2, fill: '#ffffff' }}
-                        name="Seu Time"
-                      />
-                      {seasonProgressionData[0] && (
-                        <Line
-                          type="monotone"
-                          dataKey={seasonProgressionData[0].rivalTeamName}
-                          stroke={seasonProgressionData[0].rivalColor}
-                          strokeWidth={2}
-                          strokeDasharray="4 4"
-                          dot={{ r: 3, stroke: seasonProgressionData[0].rivalColor, strokeWidth: 1.5, fill: '#050505' }}
-                          activeDot={{ r: 5, stroke: seasonProgressionData[0].rivalColor, strokeWidth: 2, fill: '#ffffff' }}
-                          name={seasonProgressionData[0].rivalTeamName}
-                        />
+                      {simulationResult && simulationResult.teamStandings && (
+                        simulationResult.teamStandings.map((teamEntry: any) => {
+                          const teamName = teamEntry.team;
+                          const isUser = isTeamUser(teamName);
+                          const color = teamEntry.color || '#94A3B8';
+                          
+                          return (
+                            <Line
+                              key={teamName}
+                              type="monotone"
+                              dataKey={teamName}
+                              stroke={color}
+                              strokeWidth={isUser ? 3 : 1.2}
+                              strokeOpacity={isUser ? 1.0 : 0.4}
+                              strokeDasharray={isUser ? undefined : "3 3"}
+                              dot={isUser ? { r: 3.5, stroke: color, strokeWidth: 1.2, fill: '#050505' } : false}
+                              activeDot={{ r: isUser ? 6 : 4, stroke: color, strokeWidth: 2, fill: '#ffffff' }}
+                              name={teamName}
+                            />
+                          );
+                        })
                       )}
                     </LineChart>
                   </ResponsiveContainer>
@@ -4083,6 +6275,34 @@ Jogue agora em: ${window.location.href}`;
               📌 Alvo corrente: <strong className="text-white uppercase">GP {CIRCUITS[simActiveRaceIdx]?.name?.replace('Grande Prêmio ', ' ') || "Corrida ativa"}</strong>
             </div>
 
+            {isMultiplayer && (
+              <div className="space-y-2 border border-neutral-800 p-3 rounded bg-zinc-950 font-sans">
+                <label className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block font-bold">
+                  🎯 Escolher Escuderia Destino:
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                  {multiplayerPlayers.map((p, idx) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setTargetPlayerIdx(idx);
+                        playBeep(440, 0.05);
+                      }}
+                      className={`px-2.5 py-2 text-[10px] font-mono rounded font-bold transition-all border text-left cursor-pointer ${
+                        targetPlayerIdx === idx
+                          ? 'bg-amber-500 border-amber-500 text-black shadow-md'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-800'
+                      }`}
+                    >
+                      <div className="truncate font-semibold">{p.teamName}</div>
+                      <div className="text-[9px] opacity-80 font-sans truncate">{p.name}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <p className="text-[11px] text-[#888] font-sans leading-normal">
               Esta ação consumirá o card permanentemente pela duração do campeonato atual, recalculando instantaneamente os tempos e a classificação de pilotos deste GP para impulsionar seu time!
             </p>
@@ -4106,6 +6326,195 @@ Jogue agora em: ${window.location.href}`;
                 Confirmar Ativação 🏁
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MULTIPLAYER SETUP MODAL ==================== */}
+      {multiSetupOpen && (
+        <div id="multiplayer_setup_modal" className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+          <div className="bg-[#0b0f19] border border-[#20293a] rounded-xl p-5 sm:p-7 max-w-2xl w-full space-y-6 animate-zoom-in my-8 shadow-[0_0_40px_rgba(255,24,1,0.15)]">
+            
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <Users className="h-6 w-6 text-red-500 animate-pulse" />
+                <div>
+                  <h4 className="font-display font-bold text-white text-base uppercase tracking-wider">Paddock Multiplayer Local</h4>
+                  <p className="text-[10px] text-gray-500 font-sans mt-0.5">Até 4 participantes completando o grid em turnos sequenciais</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setMultiSetupOpen(false);
+                  playBeep(330, 0.05);
+                }}
+                className="text-gray-400 hover:text-white font-mono text-sm uppercase px-2 py-1 bg-black/30 rounded border border-neutral-800 cursor-pointer text-xs"
+              >
+                Voltar
+              </button>
+            </div>
+
+            {/* Qtd de jogadores */}
+            <div className="bg-black/40 p-4 rounded-lg border border-neutral-800/80 space-y-3">
+              <label className="text-xs font-mono text-neutral-300 block uppercase font-bold tracking-wide">1. Escolha a Quantidade de Jogadores Simultâneos:</label>
+              <div className="flex gap-3">
+                {[2, 3, 4].map((num) => {
+                  const isActive = multiplayerCount === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => {
+                        setMultiplayerCount(num);
+                        const copy = [...tempPlayerConfigs];
+                        // If current size of config is less than selected, fill it
+                        while (copy.length < num) {
+                          const i = copy.length;
+                          copy.push({
+                            name: `Jogador ${i + 1}`,
+                            teamName: `Equipe ${i + 1} GP`,
+                            color: i === 0 ? '#FF1801' : i === 1 ? '#00A398' : i === 2 ? '#FF8700' : '#006F62'
+                          });
+                        }
+                        setTempPlayerConfigs(copy.slice(0, num));
+                        playBeep(440 + num * 20, 0.08);
+                      }}
+                      className={`flex-1 py-3 px-4 rounded font-display font-bold text-xs transition-colors border cursor-pointer ${
+                        isActive
+                          ? 'bg-[#FF1801] text-white border-[#FF1801] shadow-[0_0_15px_rgba(255,24,1,0.25)]'
+                          : 'bg-zinc-950 text-neutral-400 border-neutral-800 hover:bg-neutral-900/50 hover:text-white'
+                      }`}
+                    >
+                      {num} JOGADORES
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Configuração de cada um dos Jogadores */}
+            <div className="space-y-4 max-h-[46vh] overflow-y-auto pr-1">
+              <span className="text-xs font-mono text-neutral-300 block uppercase font-bold tracking-wide">2. Nomeie e Escolha a Escuderia de Cada Integrante:</span>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {tempPlayerConfigs.map((player, idx) => {
+                  return (
+                    <div 
+                      key={idx} 
+                      className="p-4 bg-black/60 rounded border border-neutral-800 space-y-3 relative"
+                      style={{ borderLeft: `4px solid ${player.color}` }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-mono font-bold text-white uppercase flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: player.color }}></span>
+                          PILOTO {idx + 1}
+                        </span>
+                        <span className="text-[9px] font-mono text-neutral-500">Configuração de Perfil</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[10px] font-mono text-neutral-400 block mb-0.5 uppercase">Nome do Jogador:</label>
+                          <input
+                            type="text"
+                            value={player.name}
+                            onChange={(e) => {
+                              const copy = [...tempPlayerConfigs];
+                              copy[idx].name = e.target.value.substring(0, 16);
+                              setTempPlayerConfigs(copy);
+                            }}
+                            className="w-full bg-[#111] border border-neutral-800 focus:border-red-500/50 px-2.5 py-1.5 rounded text-xs text-white focus:outline-none"
+                            placeholder={`Jogador ${idx + 1}`}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-mono text-[#AAA] block mb-0.5 uppercase">Nome da sua equipe (Mudar nome):</label>
+                          <input
+                            type="text"
+                            value={player.teamName}
+                            onChange={(e) => {
+                              const copy = [...tempPlayerConfigs];
+                              copy[idx].teamName = e.target.value.substring(0, 24);
+                              setTempPlayerConfigs(copy);
+                            }}
+                            className="w-full bg-[#111] border border-neutral-800 focus:border-red-500/50 px-2.5 py-1.5 rounded text-xs text-white focus:outline-none font-bold"
+                            placeholder="Ex: Senna Racing GP"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-mono text-neutral-400 block mb-1 uppercase">Cor da Escuderia:</label>
+                          <div className="flex gap-1.5 items-center">
+                            <input
+                              type="color"
+                              value={player.color}
+                              onChange={(e) => {
+                                const copy = [...tempPlayerConfigs];
+                                copy[idx].color = e.target.value;
+                                setTempPlayerConfigs(copy);
+                              }}
+                              className="w-7 h-7 rounded bg-transparent border-0 cursor-pointer outline-none"
+                            />
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                '#FF1801', // Ferrari Red
+                                '#FF8700', // McLaren Orange
+                                '#0C1623', // Red Bull Navy
+                                '#00A398', // Mercedes Turquoise
+                                '#006F62', // Aston Martin Green
+                                '#005AFF', // Williams Blue
+                                '#EFFF00'  // Lotus Yellow
+                              ].map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => {
+                                    const copy = [...tempPlayerConfigs];
+                                    copy[idx].color = c;
+                                    setTempPlayerConfigs(copy);
+                                    playBeep(480, 0.04);
+                                  }}
+                                  className={`w-4.5 h-4.5 rounded-full border border-black/40 hover:scale-110 active:scale-95 transition-transform ${
+                                    player.color === c ? 'ring-1 ring-white scale-105' : ''
+                                  }`}
+                                  style={{ backgroundColor: c }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-800 pt-4 flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setMultiSetupOpen(false);
+                  playBeep(330, 0.1);
+                }}
+                className="px-5 py-2.5 rounded text-xs font-display font-medium border border-[#222] text-[#AAA] hover:text-white hover:bg-white/5 uppercase transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                id="btn_confirm_multiplayer_start"
+                type="button"
+                onClick={() => {
+                  handleStartMultiplayer(multiplayerCount, tempPlayerConfigs);
+                  setMultiSetupOpen(false);
+                }}
+                className="px-8 py-3 rounded text-xs font-display font-bold bg-[#FF1801] hover:bg-red-700 text-white shadow-[0_0_20px_rgba(255,24,1,0.4)] uppercase transition-all tracking-wider cursor-pointer"
+              >
+                Iniciar Draft 🚦
+              </button>
+            </div>
+
           </div>
         </div>
       )}
