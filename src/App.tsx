@@ -43,6 +43,16 @@ import { GAME_SLOTS, CIRCUITS, SEASONS_TEAMS, getRandomComboExcept, evaluateQual
 import { runChampionshipSimulation } from './simulation';
 import { GameSlot, TeamCombination, ActiveCombo, SlotType } from './types';
 import { RadarChart } from './components/RadarChart';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 
 // Icon Map helper to resolve lucide icons
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -56,6 +66,36 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Cpu,
   Compass,
   Wrench,
+};
+
+const tipIconMap: Record<string, React.ComponentType<any>> = {
+  sparkles: Sparkles,
+  zap: Zap,
+  brain: Brain,
+  wind: Wind,
+  heart: Heart,
+  alert: AlertTriangle,
+  info: Info
+};
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-[#050505] border border-[#222] p-2.5 rounded shadow-xl font-mono text-[10px] space-y-1.5">
+        <p className="text-gray-400 font-bold border-b border-[#222] pb-1 mb-1">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center space-x-3 justify-between">
+            <span className="flex items-center space-x-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.stroke || entry.color }} />
+              <span className="text-gray-300">{entry.name}</span>
+            </span>
+            <span className="font-bold text-white">{entry.value} pts</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
 };
 
 interface SavedSession {
@@ -85,6 +125,61 @@ export default function App() {
   const [duelCompetitorB, setDuelCompetitorB] = useState<any>(null);
   const [dnfStressMultiplier, setDnfStressMultiplier] = useState<number>(100);
   const [dnfDuelResult, setDnfDuelResult] = useState<string | null>(null);
+  const [autoScaleStress, setAutoScaleStress] = useState<boolean>(true);
+
+  // Live Duel Status & Telemetry States
+  const [isLiveDuelActive, setIsLiveDuelActive] = useState<boolean>(false);
+  const [liveDuelLap, setLiveDuelLap] = useState<number>(0);
+  const [liveDuelFinished, setLiveDuelFinished] = useState<boolean>(false);
+  const [liveDuelLogs, setLiveDuelLogs] = useState<string[]>([]);
+  const [liveDuelWinner, setLiveDuelWinner] = useState<string | null>(null);
+  const [liveStatsA, setLiveStatsA] = useState({ speed: 0, throttle: 0, brake: 0, temp: 80, score: 0, status: 'Pronto' });
+  const [liveStatsB, setLiveStatsB] = useState({ speed: 0, throttle: 0, brake: 0, temp: 80, score: 0, status: 'Pronto' });
+  const [liveSector, setLiveSector] = useState<'Reta' | 'Curva' | 'Chuva' | 'S' | 'Mista'>('Reta');
+
+  const liveDuelTimerRef = React.useRef<any>(null);
+
+  // Clean timer on unmount
+  useEffect(() => {
+    return () => {
+      if (liveDuelTimerRef.current) {
+        clearInterval(liveDuelTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Force stop live duel if game mode changes
+  useEffect(() => {
+    if (gameMode !== 'duelo') {
+      setIsLiveDuelActive(false);
+      setLiveDuelFinished(false);
+      if (liveDuelTimerRef.current) {
+        clearInterval(liveDuelTimerRef.current);
+        liveDuelTimerRef.current = null;
+      }
+    }
+  }, [gameMode]);
+
+  // Automatically calculate fair stress if autoScaleStress is enabled
+  useEffect(() => {
+    if (autoScaleStress && duelCompetitorA && duelCompetitorB) {
+      const relA = duelCompetitorA.reliability || 90;
+      const relB = duelCompetitorB.reliability || 90;
+      const avgReliability = (relA + relB) / 2;
+      
+      const aggA = duelCompetitorA.aggressiveness || 80;
+      const aggB = duelCompetitorB.aggressiveness || 80;
+      const avgAggVal = (aggA + aggB) / 2;
+
+      const baseRisk = ((100 - avgReliability) * 0.18 + avgAggVal * 0.05);
+      if (baseRisk > 0) {
+        // baseRisk * (multiplier / 100) * 1.5 = 12% target balanced risk
+        // multiplier = 800 / baseRisk
+        const fairMultiplier = Math.max(20, Math.min(200, Math.round(800 / baseRisk)));
+        setDnfStressMultiplier(fairMultiplier);
+      }
+    }
+  }, [autoScaleStress, duelCompetitorA?.id, duelCompetitorB?.id, duelCompetitorA?.reliability, duelCompetitorB?.reliability, duelCompetitorA?.aggressiveness, duelCompetitorB?.aggressiveness]);
 
   // Extract all historical drivers from SEASONS_TEAMS
   const historicalDrivers = React.useMemo(() => {
@@ -245,6 +340,226 @@ export default function App() {
     setDnfDuelResult(report);
   };
 
+  const handleStopLiveDuel = () => {
+    setIsLiveDuelActive(false);
+    setLiveDuelFinished(false);
+    if (liveDuelTimerRef.current) {
+      clearInterval(liveDuelTimerRef.current);
+      liveDuelTimerRef.current = null;
+    }
+    setLiveDuelLogs(prev => [`🛑 SIMULAÇÃO LIVE INTERROMPIDA PELO DIRETOR DE PROVA.`, ...prev]);
+    playBeep(440, 0.1);
+  };
+
+  const handleStartLiveDuel = () => {
+    if (!duelCompetitorA || !duelCompetitorB) return;
+
+    // Reset everything
+    setIsLiveDuelActive(true);
+    setLiveDuelFinished(false);
+    setLiveDuelWinner(null);
+    setLiveDuelLap(1);
+    
+    // Initial logs
+    const initialLogs = [
+      `🚥 SINAL VERDE! Os motores V10/V8 rugem no grid de largada!`,
+      `🏁 Início da Batalha de Telemetria em Tempo Real (Live Modo): ${duelCompetitorA.name} vs ${duelCompetitorB.name}!`,
+    ];
+    setLiveDuelLogs(initialLogs);
+
+    // Initial stats
+    setLiveStatsA({ speed: 312, throttle: 100, brake: 0, temp: 80, score: 0, status: 'ATIVO' });
+    setLiveStatsB({ speed: 308, throttle: 100, brake: 0, temp: 80, score: 0, status: 'ATIVO' });
+    setLiveSector('Reta');
+
+    playBeep(880, 0.08);
+    setTimeout(() => playBeep(880, 0.08), 90);
+    setTimeout(() => playBeep(1200, 0.2), 180);
+
+    let currentLap = 1;
+    let scoreA = 0;
+    let scoreB = 0;
+    let tempA = 75;
+    let tempB = 75;
+    let isFinished = false;
+
+    if (liveDuelTimerRef.current) {
+      clearInterval(liveDuelTimerRef.current);
+    }
+
+    liveDuelTimerRef.current = setInterval(() => {
+      if (isFinished) {
+        clearInterval(liveDuelTimerRef.current);
+        return;
+      }
+
+      currentLap += 1;
+      if (currentLap > 10) {
+        // End of duel
+        isFinished = true;
+        setIsLiveDuelActive(false);
+        setLiveDuelFinished(true);
+        clearInterval(liveDuelTimerRef.current);
+
+        const diffFinal = scoreA - scoreB;
+        let finalWinner = '';
+        let recap = '';
+
+        if (Math.abs(diffFinal) < 15) {
+          finalWinner = 'Empate';
+          recap = `🏁 BANDEIRA QUADRADA! Empate técnico inacreditável na linha de chegada! Ambos cruzaram separados por milésimos de segundo de pura adrenalina de telemetria!`;
+        } else if (scoreA > scoreB) {
+          finalWinner = duelCompetitorA.name;
+          recap = `🏆 BANDEIRA QUADRADA! ${duelCompetitorA.name} cruza em P1! O bólido vermelho assegurou passagens perfeitas por dentro nos setores sinuosos, garantindo a vitória sobre ${duelCompetitorB.name}!`;
+        } else {
+          finalWinner = duelCompetitorB.name;
+          recap = `🏆 BANDEIRA QUADRADA! ${duelCompetitorB.name} vence o duelo! O competidor ciano executou um vácuo perfeito e superou ${duelCompetitorA.name} nas retas de velocidade!`;
+        }
+
+        setLiveDuelWinner(finalWinner);
+        setLiveDuelLogs(prev => [recap, ...prev]);
+        setLiveStatsA(prev => ({ ...prev, speed: 0, throttle: 0, brake: 0, status: scoreA > scoreB ? 'VENCEDOR' : 'FINALIZADO' }));
+        setLiveStatsB(prev => ({ ...prev, speed: 0, throttle: 0, brake: 0, status: scoreB > scoreA ? 'VENCEDOR' : 'FINALIZADO' }));
+        
+        // Victory song/sequence
+        playBeep(880, 0.1);
+        setTimeout(() => playBeep(1100, 0.1), 120);
+        setTimeout(() => playBeep(1320, 0.25), 240);
+        return;
+      }
+
+      setLiveDuelLap(currentLap);
+
+      // Define sector conditions
+      const sectorsList: ('Reta' | 'Curva' | 'Chuva' | 'S' | 'Mista')[] = ['Reta', 'S', 'Curva', 'Reta', 'Chuva', 'Curva', 'Mista', 'Reta', 'S', 'Reta'];
+      const sector = sectorsList[currentLap - 1] || 'Mista';
+      setLiveSector(sector);
+
+      // Speeds according to driver properties
+      const baseSpeed = sector === 'Reta' ? 315 : sector === 'Curva' ? 180 : sector === 'Chuva' ? 140 : 250;
+      const driverAPaceBonus = (duelCompetitorA.pace || 80) * 0.35 + (sector === 'Chuva' ? (duelCompetitorA.chuva || 80) * 0.4 : 0);
+      const driverBPaceBonus = (duelCompetitorB.pace || 80) * 0.35 + (sector === 'Chuva' ? (duelCompetitorB.chuva || 80) * 0.4 : 0);
+
+      const randA = Math.random() * 15;
+      const randB = Math.random() * 15;
+
+      const actSpeedA = Math.round(baseSpeed + driverAPaceBonus + randA);
+      const actSpeedB = Math.round(baseSpeed + driverBPaceBonus + randB);
+
+      // Rising temperatures based on aggressiveness
+      const aggA = (duelCompetitorA.aggressiveness || 80);
+      const aggB = (duelCompetitorB.aggressiveness || 80);
+      tempA = Math.round(tempA + (aggA / 55) + Math.random() * 3);
+      tempB = Math.round(tempB + (aggB / 55) + Math.random() * 3);
+
+      // Scores (integrated distance / advantage)
+      scoreA += actSpeedA;
+      scoreB += actSpeedB;
+
+      // Incident (DNF) check per lap based on current temperature and reliability
+      const relA = (duelCompetitorA.reliability || 90);
+      const relB = (duelCompetitorB.reliability || 90);
+
+      // Risk formula scaled with temperature & dnfStressMultiplier support
+      const riskFactorA = ((110 - relA) * 0.012 + (tempA > 115 ? (tempA - 115) * 0.06 : 0)) * (dnfStressMultiplier / 100);
+      const riskFactorB = ((110 - relB) * 0.012 + (tempB > 115 ? (tempB - 110) * 0.06 : 0)) * (dnfStressMultiplier / 100);
+
+      const crashRollA = Math.random() * 100;
+      const crashRollB = Math.random() * 100;
+
+      let crashA = crashRollA < (riskFactorA * 4);
+      let crashB = crashRollB < (riskFactorB * 4);
+
+      const incidentsList = [
+        'perdeu o controle físico de traseira e rodou espetacularmente na zebra pintada',
+        'teve pane severa de ignição elétrica com emissão de fumaça cinza-azulada',
+        'sofreu uma explosão repentina e espetacular do pneu dianteiro esquerdo',
+        'teve quebra fulminante da junta homocinética traseira na aceleração',
+        'superaqueceu o radiador de óleo e teve que recolher para a garagem dos boxes',
+        'danificou as aletas móveis da asa traseira, perdendo toda pressão aerodinâmica'
+      ];
+      const pickStory = () => incidentsList[Math.floor(Math.random() * incidentsList.length)];
+
+      if (crashA && crashB) {
+        isFinished = true;
+        setIsLiveDuelActive(false);
+        setLiveDuelFinished(true);
+        setLiveDuelWinner('Ambos Fora');
+        clearInterval(liveDuelTimerRef.current);
+
+        const crashLog = `🚨 CATÁSTROFE MECÂNICA DUPLA NA VOLTA ${currentLap}! Ambos os competidores abandonaram a pista! ${duelCompetitorA.name} ${pickStory()} e ${duelCompetitorB.name} simultaneamente ${pickStory()}! Telemetria completamente offline!`;
+        setLiveDuelLogs(prev => [crashLog, ...prev]);
+
+        setLiveStatsA({ speed: 0, throttle: 0, brake: 0, temp: tempA, score: scoreA, status: '💥 DNF' });
+        setLiveStatsB({ speed: 0, throttle: 0, brake: 0, temp: tempB, score: scoreB, status: '💥 DNF' });
+        playBeep(220, 0.5);
+        return;
+      }
+
+      if (crashA) {
+        isFinished = true;
+        setIsLiveDuelActive(false);
+        setLiveDuelFinished(true);
+        setLiveDuelWinner(duelCompetitorB.name);
+        clearInterval(liveDuelTimerRef.current);
+
+        const crashLog = `💥 COLISÃO/DNF DE ${duelCompetitorA.name.toUpperCase()} NA VOLTA ${currentLap}! O piloto ${pickStory()} e encostou no muro! ${duelCompetitorB.name} herda a liderança absoluta e vence!`;
+        setLiveDuelLogs(prev => [crashLog, ...prev]);
+
+        setLiveStatsA({ speed: 0, throttle: 0, brake: 0, temp: tempA, score: scoreA, status: '💥 DNF' });
+        setLiveStatsB({ speed: actSpeedB, throttle: 60, brake: 0, temp: tempB, score: scoreB, status: '🏆 VENCEDOR' });
+        playBeep(260, 0.4);
+        return;
+      }
+
+      if (crashB) {
+        isFinished = true;
+        setIsLiveDuelActive(false);
+        setLiveDuelFinished(true);
+        setLiveDuelWinner(duelCompetitorA.name);
+        clearInterval(liveDuelTimerRef.current);
+
+        const crashLog = `💥 COLISÃO/DNF DE ${duelCompetitorB.name.toUpperCase()} NA VOLTA ${currentLap}! O competidor ciano de equipe ${pickStory()}! ${duelCompetitorA.name} assume a liderança e vence com facilidade!`;
+        setLiveDuelLogs(prev => [crashLog, ...prev]);
+
+        setLiveStatsA({ speed: actSpeedA, throttle: 60, brake: 0, temp: tempA, score: scoreA, status: '🏆 VENCEDOR' });
+        setLiveStatsB({ speed: 0, throttle: 0, brake: 0, temp: tempB, score: scoreB, status: '💥 DNF' });
+        playBeep(260, 0.4);
+        return;
+      }
+
+      // Live Telemetry attributes fluctuation
+      let throtA = sector === 'Reta' ? 100 : sector === 'Curva' ? 45 : 75;
+      let throtB = sector === 'Reta' ? 100 : sector === 'Curva' ? 40 : 70;
+      let brkA = sector === 'Curva' ? 65 : 0;
+      let brkB = sector === 'Curva' ? 70 : 0;
+
+      setLiveStatsA({ speed: actSpeedA, throttle: throtA, brake: brkA, temp: tempA, score: scoreA, status: 'ATIVO' });
+      setLiveStatsB({ speed: actSpeedB, throttle: throtB, brake: brkB, temp: tempB, score: scoreB, status: 'ATIVO' });
+
+      // Storyteller dynamic comments
+      let logTxt = '';
+      const gapSec = (Math.abs(scoreA - scoreB) / 100).toFixed(3);
+      const isLeadA = scoreA > scoreB;
+
+      if (sector === 'Chuva') {
+        logTxt = `🌧️ [VOLTA ${currentLap} - CHUVA] Chuva torrencial desafia as frenagens! ${isLeadA ? duelCompetitorA.name : duelCompetitorB.name} se mostra mais consistente e abre uma margem de ${gapSec}s.`;
+      } else if (sector === 'Curva') {
+        logTxt = `📐 [VOLTA ${currentLap} - SETOR CHICANE] Freadas tardias! Os pneus de competição aquecem ferozmente no limite físico. G-Force de tirar o fôlego!`;
+      } else if (sector === 'Reta') {
+        logTxt = `🏎️ [VOLTA ${currentLap} - RETA PRINCIPAL] Pé embaixo! ${isLeadA ? duelCompetitorA.name : duelCompetitorB.name} despeja potência máxima a mais de 330km/h com vantagem de ${gapSec}s.`;
+      } else if (sector === 'S') {
+        logTxt = `🔄 [VOLTA ${currentLap} - S VELOZ] Oscilação brusca de aceleração e embreagem! Ambas as máquinas contornando os ápices de tangência lado a lado.`;
+      } else {
+        logTxt = `⚡ [VOLTA ${currentLap} - SETOR MISTO] Batalha intensa por cada milésimo de segundo! Os sensores indicam que o duelo está extraordinariamente nivelado.`;
+      }
+
+      setLiveDuelLogs(prev => [logTxt, ...prev]);
+      playBeep(600 + (isLeadA ? 120 : -100), 0.05);
+
+    }, 850);
+  };
+
 
 
   // Simulation states
@@ -258,6 +573,7 @@ export default function App() {
 
   // Sound cue simulation state
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [expandedGps, setExpandedGps] = useState<Record<number, boolean>>({});
 
   // Load history on mount
   useEffect(() => {
@@ -801,12 +1117,321 @@ Jogue agora em: ${window.location.href}`;
     }
   };
 
+  // Season point accumulation data for Recharts
+  const seasonProgressionData = React.useMemo(() => {
+    if (!simulationResult || !simulationResult.raceResults) return [];
+
+    const championTeamEntry = simulationResult.teamStandings[0];
+    const rivalTeamEntry = championTeamEntry?.team === 'Seu Time'
+      ? simulationResult.teamStandings[1]
+      : championTeamEntry;
+
+    const rivalTeamName = rivalTeamEntry?.team || 'Rival';
+    const rivalColor = rivalTeamEntry?.color || '#1E40AF';
+
+    let userCumulative = 0;
+    let rivalCumulative = 0;
+
+    return simulationResult.raceResults.map((raceResult: any, idx: number) => {
+      const userRacePoints = raceResult.positions
+        .filter((p: any) => p.team === 'Seu Time')
+        .reduce((sum: number, p: any) => sum + p.points, 0);
+
+      const rivalRacePoints = raceResult.positions
+        .filter((p: any) => p.team === rivalTeamName)
+        .reduce((sum: number, p: any) => sum + p.points, 0);
+
+      userCumulative += userRacePoints;
+      rivalCumulative += rivalRacePoints;
+
+      const shortGpName = raceResult.raceName
+        ? raceResult.raceName
+            .replace('Grande Prêmio do ', 'GP ')
+            .replace('Grande Prêmio da ', 'GP ')
+            .replace('Grande Prêmio de ', 'GP ')
+            .replace('Grande Prêmio ', 'GP ')
+        : `Etapa ${idx + 1}`;
+
+      return {
+        stage: idx + 1,
+        name: shortGpName,
+        'Seu Time': userCumulative,
+        [rivalTeamName]: rivalCumulative,
+        rivalTeamName,
+        rivalColor,
+      };
+    });
+  }, [simulationResult]);
+
   // Average Rating
   const activeAvgRating = () => {
     const keys = Object.keys(slots);
     if (keys.length === 0) return 0;
     const sum = keys.reduce((acc, k) => acc + (slots[k]?.rating_geral || 80), 0);
     return Math.round(sum / keys.length);
+  };
+
+  // Generate smart paddock tips based on current drafting choices
+  const getPaddockTips = () => {
+    const tips: {
+      id: string;
+      title: string;
+      description: string;
+      priority: 'alta' | 'média' | 'baixa' | 'aviso';
+      targetSlotId?: string;
+      icon: 'sparkles' | 'zap' | 'brain' | 'wind' | 'heart' | 'alert' | 'info';
+    }[] = [];
+
+    // Helper to check if any slot matching driver roles is empty
+    const anyDriverSlotEmpty = GAME_SLOTS.some(s => s.id.includes('driver') || s.id.includes('reserve') || s.id === 'wet_specialist' || s.id === 'legacy_wildcard') && 
+      !GAME_SLOTS.filter(s => s.id.includes('driver') || s.id.includes('reserve') || s.id === 'wet_specialist' || s.id === 'legacy_wildcard').every(s => slots[s.id]);
+
+    const isSlotEmpty = (id: string) => !slots[id];
+
+    // Read current team items
+    const drivers = [
+      slots['driver_1'],
+      slots['driver_2'],
+      slots['reserve_1'],
+      slots['reserve_2'],
+      slots['wet_specialist'],
+      slots['legacy_wildcard']
+    ].filter(Boolean);
+
+    const hasSenna = drivers.some(d => d.name?.toLowerCase().includes('senna'));
+    const hasSchumacher = drivers.some(d => d.name?.toLowerCase().includes('schumacher'));
+    const hasHamilton = drivers.some(d => d.name?.toLowerCase().includes('hamilton'));
+
+    const hasMcLaren = slots['chassis']?.name?.toLowerCase().includes('mclaren');
+    const hasFerrari = slots['chassis']?.name?.toLowerCase().includes('ferrari');
+    const hasMercedes = slots['chassis']?.name?.toLowerCase().includes('mercedes');
+    const hasRedBull = slots['chassis']?.name?.toLowerCase().includes('red bull');
+    const hasWilliams = slots['chassis']?.name?.toLowerCase().includes('williams');
+
+    const hasTodt = slots['team_boss']?.name?.toLowerCase().includes('todt');
+    const hasHorner = slots['team_boss']?.name?.toLowerCase().includes('horner');
+    const hasBinotto = slots['team_boss']?.name?.toLowerCase().includes('binotto');
+
+    const hasNewey = slots['engineer']?.name?.toLowerCase().includes('newey');
+    const hasHannah = slots['strategist']?.name?.toLowerCase().includes('hannah');
+    const hasRueda = slots['strategist']?.name?.toLowerCase().includes('inaki');
+
+    // 1. Senna & McLaren
+    if (hasSenna && isSlotEmpty('chassis')) {
+      tips.push({
+        id: 'senna_mclaren_chassis',
+        title: 'Foco no Chassi McLaren 🏎️',
+        description: 'Você já recrutou Ayrton Senna! Garanta o Chassi McLaren quando surgir para fechar a famosa simbiose histórica (+5 Ritmo, +3 Confiabilidade).',
+        priority: 'alta',
+        targetSlotId: 'chassis',
+        icon: 'sparkles'
+      });
+    } else if (hasMcLaren && anyDriverSlotEmpty) {
+      tips.push({
+        id: 'senna_mclaren_driver',
+        title: 'À procura do Rei da Chuva 👑',
+        description: 'Com o chassi McLaren já escalado, fique de olho em Ayrton Senna para reviver a icônica dinastia vermelha e branca.',
+        priority: 'alta',
+        icon: 'sparkles'
+      });
+    }
+
+    // 2. Schumacher & Ferrari or Todt
+    if (hasSchumacher) {
+      if (isSlotEmpty('chassis') && !hasFerrari) {
+        tips.push({
+          id: 'kaiser_ferrari_chassis',
+          title: 'Parceria Ferrarista Crítica 🇮🇹',
+          description: 'A lenda Michael Schumacher está a bordo! Procure pelo Chassi Ferrari para ativar o imbatível bônus de consistência.',
+          priority: 'alta',
+          targetSlotId: 'chassis',
+          icon: 'zap'
+        });
+      }
+      if (isSlotEmpty('team_boss') && !hasTodt) {
+        tips.push({
+          id: 'kaiser_todt_boss',
+          title: 'Recrute Jean Todt 📋',
+          description: 'Reúna o Kaiser com Jean Todt no Chefe do Time para habilitar o lendário combo "Era de Ouro Maranello".',
+          priority: 'alta',
+          targetSlotId: 'team_boss',
+          icon: 'brain'
+        });
+      }
+    } else {
+      if ((hasFerrari || hasTodt) && anyDriverSlotEmpty) {
+        tips.push({
+          id: 'ferrari_schumacher',
+          title: 'Em busca do Schumacher! 🇩🇪',
+          description: 'Você já possui bases de Maranello (Chassi ou Chefe). Garanta Michael Schumacher nos slots de piloto para criar a Era de Ouro.',
+          priority: 'média',
+          icon: 'zap'
+        });
+      }
+    }
+
+    // 3. Newey + Red Bull / Williams
+    if (hasNewey && isSlotEmpty('chassis')) {
+      tips.push({
+        id: 'newey_chassis',
+        title: 'Alvo: Williams ou Red Bull 📊',
+        description: 'Adrian Newey está na Engenharia! Busque no draft de Chassi uma Williams ou Red Bull para habilitar o combo "Gênio Aerodinâmico" (+8 Aero).',
+        priority: 'alta',
+        targetSlotId: 'chassis',
+        icon: 'wind'
+      });
+    } else if ((hasRedBull || hasWilliams) && isSlotEmpty('engineer')) {
+      tips.push({
+        id: 'newey_engineer',
+        title: 'Alvo: Adrian Newey 🔧',
+        description: 'Seu carro tem chassi Williams/Red Bull. Contrate Adrian Newey no Engenheiro caso ele apareça para ativar as linhas aerodinâmicas perfeitas.',
+        priority: 'alta',
+        targetSlotId: 'engineer',
+        icon: 'wind'
+      });
+    }
+
+    // 4. Hamilton + Mercedes
+    if (hasHamilton && isSlotEmpty('chassis')) {
+      tips.push({
+        id: 'ham_chassis',
+        title: 'Alvo: Chassi Mercedes ⭐',
+        description: 'Lewis Hamilton de piloto principal! Use o Chassi Mercedes para disparar o "Sexteto Prateado" (+5 Pace).',
+        priority: 'alta',
+        targetSlotId: 'chassis',
+        icon: 'zap'
+      });
+    } else if (hasMercedes && anyDriverSlotEmpty) {
+      tips.push({
+        id: 'mercedes_hamilton',
+        title: 'De Olho em Lewis Hamilton!',
+        description: 'Você garantiu as flechas de prata da Mercedes. Recrutar Lewis Hamilton ativará o ritmo devastador do "Hammer Time".',
+        priority: 'média',
+        icon: 'zap'
+      });
+    }
+
+    // 5. Hannah Schmitz + Red Bull/Horner
+    if (hasHannah) {
+      if (isSlotEmpty('chassis') && !hasRedBull) {
+        tips.push({
+          id: 'hannah_redbull_chassis',
+          title: 'Sinergia Red Bull Racing 🐂',
+          description: 'Hannah Schmitz está traçando as paradas de box! Combine com Chassi Red Bull para atingir o bônus "Estratégia Imparável".',
+          priority: 'alta',
+          targetSlotId: 'chassis',
+          icon: 'brain'
+        });
+      }
+      if (isSlotEmpty('team_boss') && !hasHorner) {
+        tips.push({
+          id: 'hannah_horner_boss',
+          title: 'Sinergia com Christian Horner 📋',
+          description: 'Combine Hannah com Christian Horner como Chefe da Equipe para obter a melhor sinergia de pit-lane tático.',
+          priority: 'média',
+          targetSlotId: 'team_boss',
+          icon: 'brain'
+        });
+      }
+    } else if ((hasRedBull || hasHorner) && isSlotEmpty('strategist')) {
+      tips.push({
+        id: 'redbull_hannah',
+        title: 'Contrate Hannah Schmitz 🧠',
+        description: 'Com chassi ou chefia da Red Bull garantidos, priorize Hannah Schmitz para o cargo de Estrategista para ditar paradas perfeitas.',
+        priority: 'alta',
+        targetSlotId: 'strategist',
+        icon: 'brain'
+      });
+    }
+
+    // 6. Garra Brasileira
+    const brCount = drivers.filter(d => d.country?.includes('Brasil')).length;
+    if (brCount === 1 && anyDriverSlotEmpty) {
+      tips.push({
+        id: 'garra_br_suggest',
+        title: 'Samba no Asfalto 🇧🇷',
+        description: 'Você já tem um piloto brasileiro. Se adicionar mais um, obterá o combo "Garra Brasileira", adicionando +6 no asfalto molhado!',
+        priority: 'média',
+        icon: 'heart'
+      });
+    }
+
+    // Warnings to avoid (Binotto + Rueda)
+    if (hasBinotto && isSlotEmpty('strategist')) {
+      tips.push({
+        id: 'avoid_inaki_rueda',
+        title: '⚠️ Evite Iñaki Rueda!',
+        description: 'Com Mattia Binotto de chefe, contratar Iñaki Rueda nos estrategistas provocará o catastrófico combo de desespero "Desastre Tático" (-10 Estratégia).',
+        priority: 'aviso',
+        targetSlotId: 'strategist',
+        icon: 'alert'
+      });
+    } else if (hasRueda && isSlotEmpty('team_boss')) {
+      tips.push({
+        id: 'avoid_binotto',
+        title: '⚠️ Evite Mattia Binotto!',
+        description: 'Com Iñaki Rueda de estrategista, EVITE escolher Mattia Binotto como chefe de time para impedir gargalos e incidentes bizarros.',
+        priority: 'aviso',
+        targetSlotId: 'team_boss',
+        icon: 'alert'
+      });
+    }
+
+    // Aggressiveness Warning
+    const aggValue = drivers.length > 0 ? (drivers.reduce((acc, d) => acc + (d.aggressiveness || 80), 0) / drivers.length) : 0;
+    if (aggValue > 88 && anyDriverSlotEmpty) {
+      tips.push({
+        id: 'avoid_high_agg',
+        title: '⚠️ Cuidado: Clima de Disputa!',
+        description: `A agressividade média dos seus pilotos contratados está em ${Math.round(aggValue)}%. Evite novos pilotos pavão/agressivos para não ativar a punição "Box Explosivo".`,
+        priority: 'aviso',
+        icon: 'alert'
+      });
+    }
+
+    // Standard tactical slot tips if nothing else takes high priority (below 3 tips)
+    if (tips.length < 3) {
+      if (isSlotEmpty('wet_specialist')) {
+        tips.push({
+          id: 'wet_tactical',
+          title: 'Chuva no Horizonte 🌧️',
+          description: 'A temporada conta com vários GPs sob chuva rigorosa (Cingapura, Interlagos). Consiga um bom piloto de Chuva (95+) para garantir pontos cruciais.',
+          priority: 'baixa',
+          targetSlotId: 'wet_specialist',
+          icon: 'info'
+        });
+      }
+      if (isSlotEmpty('strategist')) {
+        tips.push({
+          id: 'strat_tactical',
+          title: 'Cérebro Técnico 🧠',
+          description: 'O Estrategista controla como sua equipe lida com incidentes e pit-stops em pistas chuvosas.',
+          priority: 'baixa',
+          targetSlotId: 'strategist',
+          icon: 'info'
+        });
+      }
+      if (isSlotEmpty('chassis')) {
+        tips.push({
+          id: 'chassis_tactical',
+          title: 'Espinha Dorsal do Carro 🏎️',
+          description: 'O Chassi fornece o limite aerodinâmico (Aero) do carro de base. Não demore para selecionar esta espinha dorsal mecânica.',
+          priority: 'baixa',
+          targetSlotId: 'chassis',
+          icon: 'info'
+        });
+      }
+    }
+
+    // Sort tips by priority points
+    const priorityPoints: Record<string, number> = {
+      'alta': 4,
+      'aviso': 3,
+      'média': 2,
+      'baixa': 1
+    };
+
+    return tips.sort((a, b) => (priorityPoints[b.priority] || 0) - (priorityPoints[a.priority] || 0));
   };
 
   return (
@@ -1011,7 +1636,7 @@ Jogue agora em: ${window.location.href}`;
               </div>
 
               {/* Tabela vertical de cards dos Slots */}
-              <div className="space-y-2 max-h-[62vh] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[46vh] lg:max-h-[48vh] xl:max-h-[50vh] overflow-y-auto pr-1">
                 {GAME_SLOTS.map((slot, idx) => {
                   const filled = slots[slot.id];
                   const isActive = idx === activeSlotIndex;
@@ -1085,6 +1710,91 @@ Jogue agora em: ${window.location.href}`;
                   );
                 })}
               </div>
+
+              {/* Painel Dicas de Paddock / Sugestão de Sinergia */}
+              <div id="paddock_tips_panel" className="bg-[#0A0A0A] border border-[#222] p-4 rounded-md space-y-3 shadow-lg">
+                <div className="flex items-center justify-between border-b border-[#222] pb-2">
+                  <div className="flex items-center space-x-1.5">
+                    <Brain className="h-4 w-4 text-[#FF1801] animate-pulse" />
+                    <span className="font-display font-medium text-white text-xs uppercase tracking-wider">🎙️ Dicas do Paddock</span>
+                  </div>
+                  <span className="text-[8px] bg-[#FF1801]/10 text-[#FF1801] border border-[#FF1801]/25 px-1.5 py-0.5 rounded font-mono uppercase tracking-widest font-bold">
+                    Sinergia Ativa
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[22vh] overflow-y-auto pr-0.5">
+                  {getPaddockTips().slice(0, 3).map((tip) => {
+                    const TipIcon = tipIconMap[tip.icon] || Info;
+                    const isSelectable = !!tip.targetSlotId;
+
+                    let borderClass = 'border-l-2 border-gray-600 bg-[#0c0c0c] text-gray-350';
+                    let badgeClass = 'bg-[#151515] text-gray-400';
+                    let badgeText = 'Geral';
+
+                    if (tip.priority === 'alta') {
+                      borderClass = 'border-l-2 border-[#FF1801] bg-[#FF1801]/5 text-[#FFD8D5]';
+                      badgeClass = 'bg-[#FF1801]/15 text-[#FF1801]';
+                      badgeText = 'ALTA PRIORIDADE';
+                    } else if (tip.priority === 'aviso') {
+                      borderClass = 'border-l-2 border-amber-500 bg-amber-500/5 text-[#FFEED5]';
+                      badgeClass = 'bg-amber-500/15 text-amber-500';
+                      badgeText = 'RISCO/AVISO';
+                    } else if (tip.priority === 'média') {
+                      borderClass = 'border-l-2 border-cyan-400 bg-cyan-400/5 text-[#E0F7FF]';
+                      badgeClass = 'bg-cyan-400/15 text-cyan-400';
+                      badgeText = 'SUGESTÃO/CENÁRIO';
+                    } else if (tip.priority === 'baixa') {
+                      borderClass = 'border-l-2 border-slate-500 bg-slate-500/5 text-[#F0F0F0]';
+                      badgeClass = 'bg-slate-500/15 text-slate-400';
+                      badgeText = 'RECOMENDAÇÃO';
+                    }
+
+                    return (
+                      <div
+                        key={tip.id}
+                        id={`paddock_tip_${tip.id}`}
+                        onClick={() => {
+                          if (isSelectable && tip.targetSlotId) {
+                            const targetIdx = GAME_SLOTS.findIndex(s => s.id === tip.targetSlotId);
+                            if (targetIdx !== -1) {
+                              handleSelectSlotIndex(targetIdx);
+                              playBeep(440, 0.05);
+                            }
+                          }
+                        }}
+                        className={`p-2.5 rounded-sm border border-[#1d1d1d]/60 text-[10px] leading-relaxed transition-all flex flex-col space-y-1.5 ${borderClass} ${
+                          isSelectable ? 'cursor-pointer hover:border-[#FF1801]/40 hover:translate-x-0.5' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-mono text-[8px] font-bold">
+                          <div className="flex items-center space-x-1">
+                            <TipIcon className="h-3 w-3 shrink-0" />
+                            <span className="uppercase">{tip.title}</span>
+                          </div>
+                          <span className={`px-1.5 py-0.5 rounded-sm ${badgeClass}`}>
+                            {badgeText}
+                          </span>
+                        </div>
+                        <p className="font-sans text-gray-400 font-normal leading-normal">
+                          {tip.description}
+                        </p>
+                        {isSelectable && (
+                          <div className="flex items-center space-x-1 text-[8px] text-[#FF1801] font-mono font-bold uppercase pt-0.5">
+                            <span>🎯 CLIQUE PARA IR AO SLOT DO TELEMETRIA</span>
+                            <ChevronRight className="h-2.5 w-2.5" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {getPaddockTips().length === 0 && (
+                    <div className="p-3 text-center text-gray-500 text-[10px] italic font-sans">
+                      Nenhuma recomendação no momento. Continue preenchendo as vagas livremente!
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Coluna Direita (lg:col-span-7): Workspace do Sorteio Ativo */}
@@ -1146,6 +1856,11 @@ Jogue agora em: ${window.location.href}`;
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {candidates.map((cand) => {
+                        const slotId = GAME_SLOTS[activeSlotIndex]?.id;
+                        const currentComboNames = detectCombos(slots).map(c => c.name);
+                        const simulatedCombos = slotId ? detectCombos({ ...slots, [slotId]: cand }) : [];
+                        const activatedCombos = simulatedCombos.filter(c => !currentComboNames.includes(c.name));
+
                         return (
                           <div
                             key={cand.id || cand.name}
@@ -1178,6 +1893,27 @@ Jogue agora em: ${window.location.href}`;
                               <p className="text-xs text-[#888] leading-snug">
                                 {cand.description}
                               </p>
+
+                              {activatedCombos.length > 0 && (
+                                <div className="mt-2.5 space-y-1">
+                                  {activatedCombos.map((cb) => {
+                                    const isNegative = cb.bonusValue < 0;
+                                    return (
+                                      <div
+                                        key={cb.name}
+                                        className={`flex items-center space-x-1 px-1.5 py-0.5 rounded-sm text-[8px] font-mono font-bold border uppercase tracking-wider ${
+                                          isNegative
+                                            ? 'bg-red-950/25 text-[#FF1801] border-red-900/30'
+                                            : 'bg-green-950/30 text-green-400 border-green-900/30'
+                                        }`}
+                                      >
+                                        <span>{isNegative ? '⚠️ ALERTA:' : '✨ COMBO:'}</span>
+                                        <span className="truncate">{cb.name}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
 
                             {/* Detalhes de atributos base */}
@@ -1318,10 +2054,10 @@ Jogue agora em: ${window.location.href}`;
             {simLightsCount >= 6 && (
               <div className="space-y-6 animate-fade-in z-10">
                 <div className="border-t border-[#222] pt-6">
-                  <h4 className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">CALENDÁRIO DE PROVAS (8 ETAPAS):</h4>
+                  <h4 className="text-[10px] uppercase font-mono text-gray-500 tracking-wider">CALENDÁRIO DE PROVAS ({CIRCUITS.length} ETAPAS):</h4>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
                   {CIRCUITS.map((rc, idx) => {
                     const isCompeted = idx < simActiveRaceIdx;
                     const isNow = idx === simActiveRaceIdx;
@@ -1330,7 +2066,7 @@ Jogue agora em: ${window.location.href}`;
                     return (
                       <div
                         key={rc.name}
-                        className={`p-3 rounded border text-left flex flex-col justify-between h-24 transition-all ${
+                        className={`p-2.5 rounded border text-left flex flex-col justify-between h-24 transition-all ${
                           isNow
                             ? 'border-[#FF1801] bg-[#FF1801]/10 scale-102 shadow-[0_0_12px_rgba(255,24,1,0.25)] text-white'
                             : isCompeted
@@ -1339,11 +2075,11 @@ Jogue agora em: ${window.location.href}`;
                         }`}
                       >
                         <div>
-                          <span className="text-[9px] font-mono font-bold block mb-1">
-                            ETAPA 0{idx + 1}
+                          <span className="text-[8px] font-mono font-bold block mb-1 text-gray-400">
+                            ETAPA {idx + 1 < 10 ? `0${idx + 1}` : idx + 1}
                           </span>
-                          <span className="block text-xs font-display font-semibold truncate text-white leading-tight">
-                            {rc.name}
+                          <span className="block text-[11px] font-display font-semibold truncate text-white leading-tight" title={rc.name}>
+                            {rc.name.replace('Grande Prêmio ', 'GP ')}
                           </span>
                         </div>
 
@@ -1357,8 +2093,8 @@ Jogue agora em: ${window.location.href}`;
 
                           {isCompeted && winnerOfGp && (
                             <div className="text-[10px] text-green-400 font-mono flex items-center space-x-1">
-                              <Trophy className="h-3 w-3 inline text-amber-500" />
-                              <span className="truncate">{winnerOfGp.driver.split(' ')[1] || winnerOfGp.driver}</span>
+                              <Trophy className="h-3 w-3 inline text-amber-500 shrink-0" />
+                              <span className="truncate">{winnerOfGp.driver.split(' ').pop() || winnerOfGp.driver}</span>
                             </div>
                           )}
 
@@ -1375,7 +2111,7 @@ Jogue agora em: ${window.location.href}`;
                 <div className="bg-[#050505] border border-[#222] p-4 rounded text-xs space-y-2">
                   <div className="flex justify-between items-center text-[9px] font-mono text-gray-500">
                     <span>PROGRESSO GERAL</span>
-                    <span>{simActiveRaceIdx + 1} de 8 corridas simuladas</span>
+                    <span>{simActiveRaceIdx + 1} de {CIRCUITS.length} corridas simuladas</span>
                   </div>
                   <div className="w-full bg-[#151515] h-1.5 rounded overflow-hidden border border-[#222]/50">
                     <div
@@ -1421,7 +2157,7 @@ Jogue agora em: ${window.location.href}`;
                 </h3>
 
                 <p className="text-[#888] text-xs sm:text-sm leading-relaxed max-w-xl font-sans">
-                  Seus pilotos e escuderia completaram as 8 etapas históricas do campeonato de F1 enfrentando as maiores lendas de todos os tempos. Veja os resultados de telemetria abaixo!
+                  Seus pilotos e escuderia completaram as {CIRCUITS.length} etapas históricas do campeonato de F1 enfrentando as maiores lendas de todos os tempos. Veja os resultados de telemetria abaixo!
                 </p>
 
                 {/* Combos ativados */}
@@ -1645,6 +2381,237 @@ Jogue agora em: ${window.location.href}`;
                 </div>
               </div>
 
+            </div>
+
+            {/* Gráfico de Evolução da Temporada (Recharts) */}
+            <div id="season_progression_graph_section" className="bg-[#0A0A0A] border border-[#222] p-5 rounded-lg space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#222] pb-4">
+                <div className="flex items-center space-x-2.5">
+                  <Award className="h-5 w-5 text-[#FF1801]" />
+                  <h3 className="font-display font-medium text-white text-sm uppercase tracking-wider">
+                    📈 Gráfico de Evolução da Temporada
+                  </h3>
+                </div>
+                <span className="text-[9px] font-mono text-gray-400 uppercase mt-1 sm:mt-0">
+                  Desempenho acumulado por GP contra o rival do campeonato
+                </span>
+              </div>
+
+              <div className="w-full pt-1">
+                <div className="h-80 w-full bg-[#050505]/40 border border-[#1a1a1a] p-3 rounded-md">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={seasonProgressionData}
+                      margin={{ top: 10, right: 15, left: -15, bottom: 5 }}
+                    >
+                      <CartesianGrid stroke="#151515" strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#333"
+                        tick={{ fill: '#777', fontSize: 9, fontFamily: 'monospace' }}
+                        tickLine={{ stroke: '#222' }}
+                      />
+                      <YAxis 
+                        stroke="#333"
+                        tick={{ fill: '#777', fontSize: 9, fontFamily: 'monospace' }}
+                        tickLine={{ stroke: '#222' }}
+                      />
+                      <Tooltip
+                        content={<CustomTooltip />}
+                      />
+                      <Legend 
+                        verticalAlign="top" 
+                        height={36}
+                        wrapperStyle={{ fontSize: '10px', fontFamily: 'monospace', textTransform: 'uppercase' }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Seu Time"
+                        stroke="#FF1801"
+                        strokeWidth={3}
+                        dot={{ r: 4, stroke: '#FF1801', strokeWidth: 1.5, fill: '#050505' }}
+                        activeDot={{ r: 6, stroke: '#FF1801', strokeWidth: 2, fill: '#ffffff' }}
+                        name="Seu Time"
+                      />
+                      {seasonProgressionData[0] && (
+                        <Line
+                          type="monotone"
+                          dataKey={seasonProgressionData[0].rivalTeamName}
+                          stroke={seasonProgressionData[0].rivalColor}
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          dot={{ r: 3, stroke: seasonProgressionData[0].rivalColor, strokeWidth: 1.5, fill: '#050505' }}
+                          activeDot={{ r: 5, stroke: seasonProgressionData[0].rivalColor, strokeWidth: 2, fill: '#ffffff' }}
+                          name={seasonProgressionData[0].rivalTeamName}
+                        />
+                      )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Resultados Detalhados das Corridas */}
+            <div id="gp_detailed_results_section" className="bg-[#0A0A0A] border border-[#222] p-5 rounded-lg space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#222] pb-4">
+                <div className="flex items-center space-x-2.5">
+                  <Flag className="h-5 w-5 text-[#FF1801]" />
+                  <h3 className="font-display font-medium text-white text-sm uppercase tracking-wider">
+                    🏁 Resultados por Grande Prêmio & Pódios ({simulationResult.raceResults.length} Corridas)
+                  </h3>
+                </div>
+                <span className="text-[9px] font-mono text-gray-400 uppercase mt-1 sm:mt-0">
+                  Clique para conferir a classificação completa de 1º a 12º
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                {simulationResult.raceResults.map((race: any, idx: number) => {
+                  const circuitInfo = CIRCUITS.find(c => c.name === race.raceName);
+                  const isExpanded = !!expandedGps[idx];
+                  
+                  // Extract podium spots
+                  const p1 = race.podium[0];
+                  const p2 = race.podium[1];
+                  const p3 = race.podium[2];
+
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-[#050505] border border-[#1a1a1a] rounded p-3.5 flex flex-col justify-between hover:border-[#333] transition-colors"
+                    >
+                      {/* Top label */}
+                      <div className="flex items-center justify-between border-b border-[#222]/60 pb-2 mb-2">
+                        <span className="text-[9px] font-mono font-bold text-[#FF1801]">
+                          ETAPA {idx + 1 < 10 ? `0${idx + 1}` : idx + 1}
+                        </span>
+                        {circuitInfo && (
+                          <span className="text-[8px] font-mono text-gray-400 px-1.5 py-0.5 bg-black rounded border border-[#222]/40">
+                            {circuitInfo.type === 'veloz' && '⚡ Velo'}
+                            {circuitInfo.type === 'rua' && '🧱 Rua'}
+                            {circuitInfo.type === 'técnico' && '⚙️ Tec'}
+                            {circuitInfo.type === 'clássico' && '🏎️ Clássico'}
+                            {circuitInfo.isWet ? ' 🌧️ Molhado' : ' ☀️ Seco'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Header with name and country */}
+                      <div className="mb-2">
+                        <span className="block text-xs font-display font-bold text-white truncate max-w-[220px]" title={race.raceName}>
+                          {race.raceName}
+                        </span>
+                        <span className="block text-[10px] text-gray-500 font-sans">
+                          {circuitInfo?.country || 'Internacional'}
+                        </span>
+                      </div>
+
+                      {/* CSS 3D-Style Miniature Podium */}
+                      <div className="flex items-end justify-center h-20 pt-2 border-b border-[#222]/80 pb-1.5 gap-1 font-mono text-[9px] select-none">
+                        {/* P2 */}
+                        <div className="flex flex-col items-center w-1/3">
+                          <span className="text-gray-400 font-bold truncate max-w-[50px] text-center" title={p2?.driver || 'N/A'}>
+                            {p2 ? (p2.driver.split(' ').pop()) : '-'}
+                          </span>
+                          <span className="text-[7px] text-gray-500 truncate max-w-[45px] text-center">{p2?.team.split(' ')[0]}</span>
+                          <div className="w-full bg-[#1A1A1A] border border-[#2a2a2a] rounded-t-sm h-8 mt-1 flex flex-col justify-center items-center text-gray-400">
+                            <span className="font-extrabold text-[8px]">2º</span>
+                          </div>
+                        </div>
+
+                        {/* P1 */}
+                        <div className="flex flex-col items-center w-1/3">
+                          <Trophy className="h-2.5 w-2.5 text-amber-500 animate-pulse mb-0.5" />
+                          <span className="text-amber-400 font-bold truncate max-w-[52px] text-center" title={p1?.driver || 'N/A'}>
+                            {p1 ? (p1.driver.split(' ').pop()) : '-'}
+                          </span>
+                          <span className="text-[7px] text-amber-500/60 truncate max-w-[45px] text-center">{p1?.team.split(' ')[0]}</span>
+                          <div className="w-full bg-gradient-to-t from-[#362703] to-[#916d03] border border-amber-600 rounded-t-sm h-12 mt-1 flex flex-col justify-center items-center text-amber-100 shadow-[0_0_8px_rgba(180,140,0,0.15)]">
+                            <span className="font-extrabold text-[9px]">1º</span>
+                          </div>
+                        </div>
+
+                        {/* P3 */}
+                        <div className="flex flex-col items-center w-1/3">
+                          <span className="text-amber-700 font-bold truncate max-w-[50px] text-center" title={p3?.driver || 'N/A'}>
+                            {p3 ? (p3.driver.split(' ').pop()) : '-'}
+                          </span>
+                          <span className="text-[7px] text-orange-950 truncate max-w-[45px] text-center">{p3?.team.split(' ')[0]}</span>
+                          <div className="w-full bg-[#17100b] border border-[#302118] rounded-t-sm h-6 mt-1 flex flex-col justify-center items-center text-amber-800">
+                            <span className="font-extrabold text-[8px]">3º</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expand / Collapse Action */}
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedGps(prev => ({
+                              ...prev,
+                              [idx]: !prev[idx]
+                            }));
+                            playBeep(600, 0.04);
+                          }}
+                          className={`w-full py-1.5 px-2 rounded-sm text-[10px] font-mono uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-colors cursor-pointer ${
+                            isExpanded 
+                              ? 'bg-red-950/20 text-[#FF1801] border border-red-900/30 hover:bg-red-900/10' 
+                              : 'bg-black hover:bg-[#111] text-gray-400 border border-[#222]/80'
+                          }`}
+                        >
+                          <span>{isExpanded ? 'Ocultar Grid' : 'Ver Grid Completo'}</span>
+                        </button>
+                      </div>
+
+                      {/* Expanded Grid list of 1 to 12 - Inline standard flow */}
+                      {isExpanded && (
+                        <div className="p-2.5 bg-black/95 border border-[#222] rounded mt-2.5 space-y-1.5 font-mono text-[9px] text-[#A0A0A0] max-h-56 overflow-y-auto animate-fade-in">
+                          <div className="flex items-center justify-between border-b border-[#222] pb-1 mb-1 text-[8px] uppercase font-bold text-gray-500">
+                            <span>Posição / Piloto</span>
+                            <span>Pontos</span>
+                          </div>
+                          {race.positions.map((p: any, pIdx: number) => {
+                            const isUserDrv = p.team === 'Seu Time';
+                            return (
+                              <div
+                                key={p.driver}
+                                className={`flex justify-between items-center py-1.5 border-b border-black/30 last:border-0 ${
+                                  isUserDrv 
+                                    ? 'text-white font-bold bg-[#FF1801]/10 px-1 rounded-sm' 
+                                    : ''
+                                }`}
+                              >
+                                <span className="flex items-center space-x-1.5 truncate max-w-[170px]">
+                                  <span className={`w-4 font-bold ${pIdx < 3 ? 'text-amber-500 font-mono' : 'text-gray-500'}`}>
+                                    {pIdx + 1}
+                                  </span>
+                                  <span className="truncate" title={`${p.driver} (${p.team})`}>
+                                    {p.driver} <span className="text-[7.5px] opacity-60 text-gray-400">({p.team})</span>
+                                  </span>
+                                </span>
+                                
+                                <span className="shrink-0 font-bold">
+                                  {p.dnf ? (
+                                    <span className="text-[#FF1801] text-[7px] uppercase bg-red-950/20 px-1.5 py-0.5 rounded border border-red-900/30" title={p.incident}>
+                                      🚨 DNF
+                                    </span>
+                                  ) : (
+                                    <span className={pIdx < 10 ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
+                                      +{p.points}p
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* CTAs de Nova Partida */}
@@ -1991,6 +2958,341 @@ Jogue agora em: ${window.location.href}`;
 
             </div>
 
+            {/* Live Grand Prix Duel Simulator (Pit Wall Telemetry & Track Animation) */}
+            <div id="live_duel_simulation_tool" className="bg-[#0A0A0A] border border-[#222] p-5 rounded-lg space-y-5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#222] pb-3 gap-2">
+                <div className="flex items-center space-x-2.5">
+                  <Flame className="h-5 w-5 text-red-500 animate-pulse" />
+                  <h3 className="font-display font-medium text-white text-sm uppercase tracking-wider">
+                    🏆 Live Grand Prix Duel (Telemetria de Pit Wall)
+                  </h3>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className={`text-[8px] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-widest ${
+                    isLiveDuelActive 
+                      ? 'bg-red-500/10 text-red-500 border border-red-500/20 animate-pulse' 
+                      : liveDuelFinished 
+                        ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                        : 'bg-neutral-800 text-gray-400'
+                  }`}>
+                    {isLiveDuelActive ? '● CORRIDA EM CURSO' : liveDuelFinished ? '🏁 CORRIDA FINALIZADA' : '🚦 AGUARDANDO LARGADA'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Control Deck panel */}
+              {duelCompetitorA && duelCompetitorB ? (
+                <div className="space-y-4">
+                  
+                  {/* Action row with statistics overview */}
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-[#050505]/60 border border-[#1d1d1d] p-4 rounded-md">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs font-mono text-gray-450">
+                      <div>
+                        <span className="text-gray-500 mr-1.5 uppercase font-bold text-[10px]">Setor Atual:</span>
+                        <span className="text-white font-bold uppercase bg-[#151515] px-2 py-0.5 rounded border border-[#222]">
+                          {liveSector === 'Chuva' && '🌧️ Chuva'}
+                          {liveSector === 'Reta' && '🏎️ Reta Principal'}
+                          {liveSector === 'Curva' && '📐 Chicane'}
+                          {liveSector === 'S' && '🔄 S do Senna'}
+                          {liveSector === 'Mista' && '⚡ Setor Misto'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 mr-1.5 uppercase font-bold text-[10px]">Volta:</span>
+                        <span className="text-cyan-400 font-bold font-mono">
+                          {isLiveDuelActive || liveDuelFinished ? `${liveDuelLap} / 10` : '0 / 10'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 mr-1.5 uppercase font-bold text-[10px]">Estresse Ativo:</span>
+                        <span className="text-amber-500 font-bold font-mono">
+                          {dnfStressMultiplier}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      {isLiveDuelActive ? (
+                        <button
+                          type="button"
+                          onClick={handleStopLiveDuel}
+                          className="bg-red-955/40 hover:bg-red-900 border border-red-700/60 text-red-100 font-display font-bold px-5 py-2.5 rounded text-xs tracking-wider uppercase cursor-pointer active:scale-95 transition-all flex items-center space-x-1.5"
+                        >
+                          <span>🛑 Abortar Telemetria</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleStartLiveDuel}
+                          className={`font-display font-bold px-6 py-2.5 rounded text-xs tracking-wider uppercase cursor-pointer active:scale-95 transition-all flex items-center space-x-2 shadow-[0_0_15px_rgba(255,24,1,0.15)] ${
+                            liveDuelFinished
+                              ? 'bg-amber-600 hover:bg-amber-700 text-black shadow-[0_0_15px_rgba(217,119,6,0.25)]'
+                              : 'bg-[#FF1801] hover:bg-red-700 text-white'
+                          }`}
+                        >
+                          <Play className="h-3.5 w-3.5 fill-current" />
+                          <span>{liveDuelFinished ? '🔄 Replay Corrida' : '🚀 Iniciar Corrida Live'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stylized Speedway Animation Track */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center px-1 text-[9px] font-mono text-gray-500 uppercase font-bold">
+                      <span>🏁 Pista de Interlagos (Esquema Integrado)</span>
+                      {liveDuelWinner && (
+                        <span className="text-yellow-400 animate-pulse">
+                          🏆 Vencedor: {liveDuelWinner}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="relative h-20 bg-[#050505] rounded-md border border-[#1a1a1a] overflow-hidden shadow-inner">
+                      {/* Grid overlay for a high tech look */}
+                      <div className="absolute inset-x-0 top-1/2 h-[1px] bg-[#151515] border-t border-dashed border-[#222]" />
+                      
+                      {/* Checkpoint markings */}
+                      <div className="absolute inset-0 flex justify-between px-3 text-[7px] font-mono text-gray-600 select-none items-center h-full pointer-events-none">
+                        <span>[GRID LARGADA]</span>
+                        <span>[S DO SENNA]</span>
+                        <span>[RETA OPOS]</span>
+                        <span>[LAGO]</span>
+                        <span>[PINHEIRINHO]</span>
+                        <span>[MERGULHO]</span>
+                        <span className="text-gray-500">🏁 [CHEGADA]</span>
+                      </div>
+
+                      {/* Lane 1 (A) - Red */}
+                      <div className="absolute top-[8%] left-0 w-full h-[38%] flex items-center pr-10">
+                        {(() => {
+                          const scoreA = liveStatsA.score;
+                          const posA = liveStatsA.status === '💥 DNF' 
+                            ? Math.min(95, Math.max(2, (scoreA / 2700) * 100))
+                            : isLiveDuelActive || liveDuelFinished
+                              ? Math.min(95, Math.max(2, (scoreA / 2700) * 100))
+                              : 2;
+
+                          return (
+                            <div 
+                              style={{ left: `${posA}%` }} 
+                              className="absolute flex items-center space-x-1.5 transition-all duration-700 ease-out"
+                            >
+                              <div className="relative group">
+                                <div className={`absolute -inset-1 rounded-full bg-[#FF1801]/35 blur-[2px] ${isLiveDuelActive ? 'animate-pulse' : ''}`} />
+                                <div className={`relative h-5 w-5 rounded-full flex items-center justify-center border text-[9px] font-bold shadow-md transition-all ${
+                                  liveStatsA.status === '💥 DNF'
+                                    ? 'bg-red-950/90 border-[#FF1801] text-[#FF1801]'
+                                    : liveStatsA.status === '🏆 VENCEDOR'
+                                      ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_12px_rgba(234,179,8,0.4)]'
+                                      : 'bg-[#FF1801] border-red-400 text-white'
+                                }`}>
+                                  {liveStatsA.status === '💥 DNF' ? '💥' : '🔴'}
+                                </div>
+                              </div>
+                              <span className="text-[7.5px] font-bold text-[#FF1801] font-mono bg-black/80 px-1 py-0.5 rounded border border-red-900/30 whitespace-nowrap">
+                                {duelCompetitorA.name.split(' ')[1] || 'A'} {liveStatsA.speed > 0 ? `(${liveStatsA.speed} km/h)` : ''}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Lane 2 (B) - Cyan */}
+                      <div className="absolute bottom-[8%] left-0 w-full h-[38%] flex items-center pr-10">
+                        {(() => {
+                          const scoreB = liveStatsB.score;
+                          const posB = liveStatsB.status === '💥 DNF' 
+                            ? Math.min(95, Math.max(2, (scoreB / 2700) * 100))
+                            : isLiveDuelActive || liveDuelFinished
+                              ? Math.min(95, Math.max(2, (scoreB / 2700) * 100))
+                              : 2;
+
+                          return (
+                            <div 
+                              style={{ left: `${posB}%` }} 
+                              className="absolute flex items-center space-x-1.5 transition-all duration-700 ease-out"
+                            >
+                              <div className="relative group">
+                                <div className={`absolute -inset-1 rounded-full bg-cyan-400/35 blur-[2px] ${isLiveDuelActive ? 'animate-pulse' : ''}`} />
+                                <div className={`relative h-5 w-5 rounded-full flex items-center justify-center border text-[9px] font-bold shadow-md transition-all ${
+                                  liveStatsB.status === '💥 DNF'
+                                    ? 'bg-slate-900/90 border-cyan-400 text-cyan-400'
+                                    : liveStatsB.status === '🏆 VENCEDOR'
+                                      ? 'bg-yellow-500 border-yellow-300 text-black shadow-[0_0_12px_rgba(234,179,8,0.4)]'
+                                      : 'bg-cyan-500 border-cyan-400 text-black'
+                                }`}>
+                                  {liveStatsB.status === '💥 DNF' ? '💥' : '🔵'}
+                                </div>
+                              </div>
+                              <span className="text-[7.5px] font-bold text-cyan-400 font-mono bg-black/80 px-1 py-0.5 rounded border border-cyan-900/40 whitespace-nowrap">
+                                {duelCompetitorB.name.split(' ')[1] || 'B'} {liveStatsB.speed > 0 ? `(${liveStatsB.speed} km/h)` : ''}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dual Telemetry Monitors and Terminal Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    
+                    {/* Monitor A */}
+                    <div className="md:col-span-4 bg-[#050505] border border-red-950/45 rounded p-3.5 space-y-3 relative overflow-hidden shadow-inner">
+                      <div className="absolute inset-x-0 top-0 h-[2px] bg-[#FF1801]" />
+                      <div className="flex justify-between items-center border-b border-[#151515] pb-1.5">
+                        <span className="text-[10px] font-mono font-bold text-red-500 uppercase tracking-wide truncate max-w-[140px]">
+                          {duelCompetitorA.name}
+                        </span>
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                          liveStatsA.status === '💥 DNF'
+                            ? 'bg-red-955 text-[#FF1801] border border-red-900/50'
+                            : liveStatsA.status === '🏆 VENCEDOR'
+                              ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/30'
+                              : liveStatsA.status === 'ATIVO'
+                                ? 'bg-[#FF1801]/10 text-[#FF1801] border border-[#FF1801]/20'
+                                : 'bg-neutral-900 text-gray-500'
+                        }`}>
+                          {liveStatsA.status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 text-xs font-mono">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[9px] text-gray-500">VELOCIDADE:</span>
+                          <span className="text-sm font-bold text-white font-mono">{liveStatsA.speed} km/h</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-[#111] rounded-full overflow-hidden">
+                          <div 
+                            style={{ width: `${Math.min(100, (liveStatsA.speed / 360) * 100)}%` }}
+                            className="bg-[#FF1801] h-full transition-all duration-300" 
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          <div>
+                            <span className="text-[8px] text-gray-500 block">ACELERADOR:</span>
+                            <span className="text-white font-bold">{liveStatsA.throttle}%</span>
+                            <div className="h-1 bg-[#111] rounded-full overflow-hidden mt-1">
+                              <div style={{ width: `${liveStatsA.throttle}%` }} className="bg-emerald-500 h-full" />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[8px] text-gray-500 block">FREIO:</span>
+                            <span className="text-white font-bold">{liveStatsA.brake}%</span>
+                            <div className="h-1 bg-[#111] rounded-full overflow-hidden mt-1">
+                              <div style={{ width: `${liveStatsA.brake}%` }} className="bg-red-500 h-full" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-gray-500">TEMP MOTOR:</span>
+                          <span className={`font-bold font-mono ${liveStatsA.temp > 115 ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
+                            {liveStatsA.temp}°C {liveStatsA.temp > 115 && '🔥 CRIT'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Monitor B */}
+                    <div className="md:col-span-4 bg-[#050505] border border-cyan-950/45 rounded p-3.5 space-y-3 relative overflow-hidden shadow-inner">
+                      <div className="absolute inset-x-0 top-0 h-[2px] bg-cyan-400" />
+                      <div className="flex justify-between items-center border-b border-[#151515] pb-1.5">
+                        <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wide truncate max-w-[140px]">
+                          {duelCompetitorB.name}
+                        </span>
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                          liveStatsB.status === '💥 DNF'
+                            ? 'bg-red-955 text-[#FF1801] border border-red-900/50'
+                            : liveStatsB.status === '🏆 VENCEDOR'
+                              ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/30'
+                              : liveStatsB.status === 'ATIVO'
+                                ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                                : 'bg-neutral-900 text-gray-500'
+                        }`}>
+                          {liveStatsB.status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 text-xs font-mono">
+                        <div className="flex justify-between items-end">
+                          <span className="text-[9px] text-gray-500">VELOCIDADE:</span>
+                          <span className="text-sm font-bold text-white font-mono">{liveStatsB.speed} km/h</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-[#111] rounded-full overflow-hidden">
+                          <div 
+                            style={{ width: `${Math.min(100, (liveStatsB.speed / 360) * 100)}%` }}
+                            className="bg-cyan-400 h-full transition-all duration-300" 
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          <div>
+                            <span className="text-[8px] text-gray-500 block">ACELERADOR:</span>
+                            <span className="text-white font-bold">{liveStatsB.throttle}%</span>
+                            <div className="h-1 bg-[#111] rounded-full overflow-hidden mt-1">
+                              <div style={{ width: `${liveStatsB.throttle}%` }} className="bg-emerald-500 h-full" />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[8px] text-gray-500 block">FREIO:</span>
+                            <span className="text-white font-bold">{liveStatsB.brake}%</span>
+                            <div className="h-1 bg-[#111] rounded-full overflow-hidden mt-1">
+                              <div style={{ width: `${liveStatsB.brake}%` }} className="bg-red-500 h-full" />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center text-[10px]">
+                          <span className="text-gray-500">TEMP MOTOR:</span>
+                          <span className={`font-bold font-mono ${liveStatsB.temp > 115 ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
+                            {liveStatsB.temp}°C {liveStatsB.temp > 115 && '🔥 CRIT'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Terminal Scroll Log */}
+                    <div className="md:col-span-4 bg-black border border-[#222]/80 rounded p-3 relative shadow-inner flex flex-col h-[142px]">
+                      <div className="flex items-center space-x-1.5 text-[8.5px] font-mono text-gray-500 border-b border-[#111] pb-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span className="uppercase font-bold">RACE CONTROL FEED (LIVE LOG)</span>
+                      </div>
+                      <div className="flex-1 overflow-y-auto font-mono text-[9px] text-gray-300 pt-2 space-y-1.5 scrollbar-thin select-none">
+                        {liveDuelLogs.map((log, idx) => {
+                          let colorClass = 'text-gray-400';
+                          if (log.includes('🏆') || log.includes('VENCEDOR')) colorClass = 'text-yellow-400 font-bold';
+                          else if (log.includes('💥') || log.includes('🚨')) colorClass = 'text-red-400 font-bold';
+                          else if (log.includes('🌧️')) colorClass = 'text-cyan-400';
+                          else if (log.includes('🏁')) colorClass = 'text-white font-semibold';
+                          else if (log.includes('🚥') || log.includes('SINAL VERDE')) colorClass = 'text-emerald-400 font-bold';
+
+                          return (
+                            <div key={`log-${idx}`} className={`leading-normal ${colorClass}`}>
+                              {log}
+                            </div>
+                          );
+                        })}
+                        {liveDuelLogs.length === 0 && (
+                          <div className="text-gray-600 italic text-center text-[8.5px] py-4">
+                            Pressione 'Iniciar Corrida Live' para acionar os bólidos.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+              ) : (
+                <div className="p-5 text-center text-[#777] font-mono text-xs italic">
+                  Escolha ambos os competidores para carregar o Pit Wall Virtual.
+                </div>
+              )}
+            </div>
+
             {/* DNF Core Tool Module */}
             <div id="dnf_simulation_tool" className="bg-[#0A0A0A] border border-[#222] p-5 rounded-lg space-y-4 shadow-xl">
               <div className="flex items-center space-x-2 border-b border-[#222] pb-3">
@@ -2000,7 +3302,23 @@ Jogue agora em: ${window.location.href}`;
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                 <div className="md:col-span-4 space-y-3">
-                  <span className="text-[10px] text-gray-400 font-mono uppercase block font-bold">🎡 Multiplicador de Estresse Mecânico:</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-mono uppercase font-bold">🎡 Multiplicador de Estresse:</span>
+                    <label className="inline-flex items-center space-x-2 cursor-pointer text-[10px] font-mono text-gray-400 select-none">
+                      <input 
+                        type="checkbox"
+                        checked={autoScaleStress}
+                        onChange={(e) => {
+                          setAutoScaleStress(e.target.checked);
+                          playBeep(440, 0.05);
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4.5 bg-[#151515] rounded-full peer peer-checked:bg-[#FF1801]/20 border border-[#222] relative transition-colors duration-200 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-500 peer-checked:after:bg-[#FF1801] after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-3" />
+                      <span className="font-bold uppercase tracking-wider text-[8px] transition-colors peer-checked:text-[#FF1801]">Auto Justo</span>
+                    </label>
+                  </div>
+                  
                   <div className="space-y-1">
                     <input 
                       type="range" 
@@ -2010,18 +3328,27 @@ Jogue agora em: ${window.location.href}`;
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         setDnfStressMultiplier(val);
+                        setAutoScaleStress(false); // Disables auto-balance when adjusted manually
                         playBeep(350 + val, 0.03);
                       }}
                       className="w-full accent-red-600 cursor-pointer h-1 bg-[#151515] rounded" 
                     />
                     <div className="flex justify-between text-[10px] font-mono text-gray-500">
                       <span>Mínimo (20%)</span>
-                      <span className="text-[#FF1801] font-bold">{dnfStressMultiplier}% Stress</span>
+                      <span className={`font-bold font-mono transition-colors ${autoScaleStress ? 'text-[#FF1801] animate-pulse' : 'text-gray-300'}`}>
+                        {dnfStressMultiplier}% Stress {autoScaleStress && '(Auto)'}
+                      </span>
                       <span>Máximo (200%)</span>
                     </div>
                   </div>
                   <p className="text-[10px] text-gray-500 leading-relaxed font-sans">
-                    Ajuste o desgaste mecânico e térmico. Valores elevados amplificam as chances de incidentes mecânicos severos (Pane Elétrica, estouro pneumático, DNF) com base na agressividade e confiabilidade de cada piloto.
+                    {autoScaleStress ? (
+                      <span className="text-amber-500/90 font-mono text-[9px] block">
+                        ⚡ Calibração ativa! Estresse nivelado para atingir um risco médio ideal de incidentes com base nas taxas de quebras.
+                      </span>
+                    ) : (
+                      "Ajuste o desgaste mecânico e térmico. Valores elevados amplificam as chances de incidentes mecânicos severos (Pane Elétrica, estouro pneumático, DNF) com base na agressividade e confiabilidade de cada piloto."
+                    )}
                   </p>
                 </div>
 

@@ -361,7 +361,7 @@ export function runChampionshipSimulation(
     // Add race highlight narration occasionally
     const winner = positions[0];
     const userBestPos = positions.findIndex(p => p.team === 'Seu Time');
-    if (raceIdx === 1) { // Spa
+    if (race.name === 'Grande Prêmio da Bélgica') {
       if (userBestPos === 0) {
         narrationHighlights.push(`Vitória mágica em Spa-Francorchamps! ${positions[userBestPos].driver} escalou o grid de forma lendária cortando a Eau Rouge sob gritos de emoção na mureta.`);
       } else if (userBestPos < 3) {
@@ -376,7 +376,7 @@ export function runChampionshipSimulation(
       }
     }
 
-    if (raceIdx === 4) { // Silverstone
+    if (race.name === 'Grande Prêmio da Grã-Bretanha') {
       const hasDnf = positions.some(p => p.team === 'Seu Time' && p.dnf);
       if (hasDnf) {
         narrationHighlights.push(`Drama na Grã-Bretanha: Contatos acalorados na curva Copse causaram avaria grave mecânica.`);
@@ -385,8 +385,8 @@ export function runChampionshipSimulation(
       }
     }
 
-    if (raceIdx === 7) { // Austin showdown
-      narrationHighlights.push(`Grande Finale na pista texana de Austin! Disputas roda a roda decidem os últimos pontos do ano mundial.`);
+    if (raceIdx === CIRCUITS.length - 1) { // Final showdown
+      narrationHighlights.push(`Grande Finale na pista crepuscular de Abu Dhabi! Disputas roda a roda decidem o título mundial da temporada.`);
     }
   });
 
