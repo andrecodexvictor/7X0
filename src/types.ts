@@ -64,14 +64,14 @@ export interface Engineer {
   description: string;
 }
 
-export type SlotType = 'driver_1' | 'driver_2' | 'reserve_1' | 'reserve_2' | 'wet_specialist' | 'legacy_wildcard' | 'team_boss' | 'chassis' | 'strategist' | 'engineer';
+export type SlotType = 'driver_1' | 'driver_2' | 'reserve_1' | 'engine' | 'chassis' | 'team_boss' | 'engineer' | 'strategist';
 
 export interface GameSlot {
   id: SlotType;
   name: string;
   description: string;
   icon: string;
-  type: 'driver' | 'boss' | 'chassis' | 'strategist' | 'engineer';
+  type: 'driver' | 'boss' | 'chassis' | 'strategist' | 'engineer' | 'engine';
   filledWith: any | null; // Selected entity
 }
 

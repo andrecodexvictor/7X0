@@ -48,6 +48,7 @@ import { GAME_SLOTS, CIRCUITS, SEASONS_TEAMS, getRandomComboExcept, evaluateQual
 import TEAMS_META from './data/teams_meta.json';
 import DRIVERS_META from './data/drivers_meta.json';
 import ENGINEERS_META from './data/engineers_meta.json';
+import ENGINES_META from './data/engines_meta.json';
 import { runChampionshipSimulation, RIVAL_DRIVERS, DriverEntry } from './simulation';
 import { GameSlot, TeamCombination, ActiveCombo, SlotType } from './types';
 import { RadarChart } from './components/RadarChart';
@@ -422,9 +423,6 @@ export default function App() {
     const userDriver1 = slots['driver_1'];
     const userDriver2 = slots['driver_2'];
     const userReserve1 = slots['reserve_1'];
-    const userReserve2 = slots['reserve_2'];
-    const userWetRef = slots['wet_specialist'];
-    const userLegacy = slots['legacy_wildcard'];
 
     if (userDriver1) {
       list.push({
@@ -444,40 +442,13 @@ export default function App() {
         displayName: `⭐ ${userDriver2.name} (Seu Titular 2)`
       });
     }
-    if (userWetRef) {
-      list.push({
-        ...userWetRef,
-        id_season: 'user_wet',
-        sourceTeam: 'Sua Equipe (Chuva)',
-        sourceSeason: 'Atual',
-        displayName: `⭐ ${userWetRef.name} (Seu Especialista de Chuva)`
-      });
-    }
     if (userReserve1) {
       list.push({
         ...userReserve1,
         id_season: 'user_reserve_1',
-        sourceTeam: 'Sua Equipe (Reserva 1)',
+        sourceTeam: 'Sua Equipe (Reserva)',
         sourceSeason: 'Atual',
-        displayName: `⭐ ${userReserve1.name} (Seu Reserva 1)`
-      });
-    }
-    if (userReserve2) {
-      list.push({
-        ...userReserve2,
-        id_season: 'user_reserve_2',
-        sourceTeam: 'Sua Equipe (Histórico)',
-        sourceSeason: 'Atual',
-        displayName: `⭐ ${userReserve2.name} (Seu Histórico/Reserva)`
-      });
-    }
-    if (userLegacy) {
-      list.push({
-        ...userLegacy,
-        id_season: 'user_legacy',
-        sourceTeam: 'Sua Equipe (Coringa)',
-        sourceSeason: 'Atual',
-        displayName: `⭐ ${userLegacy.name} (Seu Coringa de Legado)`
+        displayName: `⭐ ${userReserve1.name} (Seu Reserva)`
       });
     }
 
@@ -1125,158 +1096,6 @@ export default function App() {
         filteredDrivers = [...filteredDrivers, ...chosenExtras];
       }
 
-      // If we are looking for a rain specialist, let's inject historical wet weather masters as choices
-      if (currentSlot.id === 'wet_specialist') {
-        const wetMasters = [
-          {
-            id: 'senna_wet_legend',
-            name: 'Ayrton Senna (Mestre da Chuva)',
-            country: 'Brasil 🇧🇷',
-            titles: 3,
-            wins: 41,
-            podiums: 80,
-            poles: 65,
-            rating_geral: 99,
-            pace: 100,
-            consistency: 95,
-            chuva: 100,
-            aggressiveness: 98,
-            reliability: 94,
-            description: 'Lenda absoluta sob as tempestades mais terríveis da história da F1.',
-            entityType: 'driver',
-            sourceTeam: 'McLaren',
-            sourceSeason: 1988,
-          },
-          {
-            id: 'schumacher_wet_legend',
-            name: 'Michael Schumacher (Kaiser sob Chuva)',
-            country: 'Alemanha 🇩🇪',
-            titles: 7,
-            wins: 91,
-            podiums: 155,
-            poles: 68,
-            rating_geral: 98,
-            pace: 99,
-            consistency: 99,
-            chuva: 99,
-            aggressiveness: 92,
-            reliability: 99,
-            description: 'Seu controle tático em pistas úmidas era simplesmente de outro planeta.',
-            entityType: 'driver',
-            sourceTeam: 'Ferrari',
-            sourceSeason: 2004,
-          },
-          {
-            id: 'button_wet_legend',
-            name: 'Jenson Button (Especialista em Misto)',
-            country: 'Reino Unido 🇬🇧',
-            titles: 1,
-            wins: 15,
-            podiums: 50,
-            poles: 8,
-            rating_geral: 93,
-            pace: 91,
-            consistency: 96,
-            chuva: 98,
-            aggressiveness: 80,
-            reliability: 95,
-            description: 'Mestre incontestável em ler o momento de transição de asfalto úmido para seco.',
-            entityType: 'driver',
-            sourceTeam: 'Brawn GP',
-            sourceSeason: 2009,
-          },
-          {
-            id: 'barrichello_wet_legend',
-            name: 'Rubens Barrichello (Mestre de Interlagos)',
-            country: 'Brasil 🇧🇷',
-            titles: 0,
-            wins: 11,
-            podiums: 68,
-            poles: 14,
-            rating_geral: 91,
-            pace: 89,
-            consistency: 91,
-            chuva: 95,
-            aggressiveness: 82,
-            reliability: 94,
-            description: 'Tem uma sensibilidade mágica com as poças na chuva de Interlagos e Silverstone.',
-            entityType: 'driver',
-            sourceTeam: 'Ferrari',
-            sourceSeason: 2004,
-          }
-        ];
-        
-        // Add valid ones who aren't already drafted by base name
-        const validWetMasters = wetMasters.filter(m => !draftedNorms.has(normalizeDriverName(m.name)));
-        filteredDrivers = [...filteredDrivers, ...validWetMasters];
-      }
-
-      // If we are looking for a legacy wildcard, add generic legends or other historical options
-      if (currentSlot.id === 'legacy_wildcard') {
-        const legends = [
-          {
-            id: 'prost_legacy',
-            name: 'Alain Prost (O Professor)',
-            country: 'França 🇫🇷',
-            titles: 4,
-            wins: 51,
-            podiums: 106,
-            poles: 33,
-            rating_geral: 97,
-            pace: 96,
-            consistency: 100,
-            chuva: 88,
-            aggressiveness: 78,
-            reliability: 98,
-            description: 'Frio, cirúrgico e taticamente perfeito em economizar pneus e motor.',
-            entityType: 'driver',
-            sourceTeam: 'McLaren',
-            sourceSeason: 1989,
-          },
-          {
-            id: 'vettel_legacy',
-            name: 'Sebastian Vettel (Tetracampeão)',
-            country: 'Alemanha 🇩🇪',
-            titles: 4,
-            wins: 53,
-            podiums: 122,
-            poles: 57,
-            rating_geral: 95,
-            pace: 95,
-            consistency: 94,
-            chuva: 90,
-            aggressiveness: 86,
-            reliability: 95,
-            description: 'O jovem prodígio absoluto das poles e do domínio de ponta a ponta na era Red Bull.',
-            entityType: 'driver',
-            sourceTeam: 'Red Bull Racing',
-            sourceSeason: 2013,
-          },
-          {
-            id: 'alonso_legacy',
-            name: 'Fernando Alonso (El Nano)',
-            country: 'Espanha 🇪🇸',
-            titles: 2,
-            wins: 32,
-            podiums: 106,
-            poles: 22,
-            rating_geral: 96,
-            pace: 96,
-            consistency: 97,
-            chuva: 92,
-            aggressiveness: 92,
-            reliability: 96,
-            description: 'Combatividade incansável, defesas de pista históricas e agressividade letal.',
-            entityType: 'driver',
-            sourceTeam: 'Renault F1',
-            sourceSeason: 2005,
-          }
-        ];
-        
-        const validLegends = legends.filter(l => !draftedNorms.has(normalizeDriverName(l.name)));
-        filteredDrivers = [...filteredDrivers, ...validLegends];
-      }
-
       // Historically bad drivers pool (20-50 ratings) to create severe frustration
       const badDriversPool = [
         {
@@ -1496,7 +1315,10 @@ export default function App() {
           } as any);
         }
       }
-      setCandidates(uniqueGeneratedCandidates);
+
+      // Shuffle options to maximize randomness and slice to at most 3 elements to reduce selection fatigue
+      const randomizedSubset = [...uniqueGeneratedCandidates].sort(() => 0.5 - Math.random()).slice(0, 3);
+      setCandidates(randomizedSubset);
 
     } else if (currentSlot.type === 'boss') {
       // Official boss
@@ -1509,15 +1331,17 @@ export default function App() {
         }
       ];
 
-      // Add a sibling alternative from our database for choice variety
+      // Add sibling alternatives from our database for exactly 3 options
       const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
       if (otherCombos.length > 0) {
-        const randomOther = otherCombos[Math.floor(Math.random() * otherCombos.length)];
-        candidatesList.push({
-          ...randomOther.boss,
-          entityType: 'boss',
-          sourceTeam: randomOther.teamName,
-          sourceSeason: randomOther.season,
+        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
+        shuffledOthers.slice(0, 2).forEach(randomOther => {
+          candidatesList.push({
+            ...randomOther.boss,
+            entityType: 'boss',
+            sourceTeam: randomOther.teamName,
+            sourceSeason: randomOther.season,
+          });
         });
       }
       setCandidates(candidatesList);
@@ -1534,14 +1358,52 @@ export default function App() {
       // Alt chassis
       const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
       if (otherCombos.length > 0) {
-        const randomOther = otherCombos[Math.floor(Math.random() * otherCombos.length)];
-        candidatesList.push({
-          ...randomOther.chassis,
-          entityType: 'chassis',
-          sourceTeam: randomOther.teamName,
-          sourceSeason: randomOther.season,
+        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
+        shuffledOthers.slice(0, 2).forEach(randomOther => {
+          candidatesList.push({
+            ...randomOther.chassis,
+            entityType: 'chassis',
+            sourceTeam: randomOther.teamName,
+            sourceSeason: randomOther.season,
+          });
         });
       }
+      setCandidates(candidatesList);
+
+    } else if (currentSlot.type === 'engine') {
+      // Resolve culturally matched engine first from ENGINES_META
+      const chassisEngineStr = combo.chassis.engine?.toLowerCase() || '';
+      let matched = ENGINES_META.find(e => 
+        chassisEngineStr.includes(e.brand.toLowerCase()) || 
+        chassisEngineStr.includes(e.name.toLowerCase()) ||
+        e.bestKnownTeams.some(t => combo.teamName.toLowerCase().includes(t.toLowerCase()))
+      );
+      if (!matched) {
+        // Fallback to Renault or Ferrari if no obvious match
+        matched = ENGINES_META.find(e => e.id === 'mercedes_hybrid') || ENGINES_META[0];
+      }
+
+      const candidatesList = [
+        {
+          ...matched,
+          entityType: 'engine',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+        }
+      ];
+
+      // Fill remaining 2 options with random distinct engines
+      const otherEngines = ENGINES_META.filter(e => e.id !== matched!.id);
+      const shuffledOthers = [...otherEngines].sort(() => 0.5 - Math.random());
+      shuffledOthers.slice(0, 2).forEach(unmatched => {
+        candidatesList.push({
+          ...unmatched,
+          entityType: 'engine',
+          sourceTeam: 'Mercado de Motores',
+          sourceSeason: combo.season,
+        });
+      });
+
       setCandidates(candidatesList);
 
     } else if (currentSlot.type === 'strategist') {
@@ -1556,12 +1418,14 @@ export default function App() {
       // Alt strategist
       const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
       if (otherCombos.length > 0) {
-        const randomOther = otherCombos[Math.floor(Math.random() * otherCombos.length)];
-        candidatesList.push({
-          ...randomOther.strategist,
-          entityType: 'strategist',
-          sourceTeam: randomOther.teamName,
-          sourceSeason: randomOther.season,
+        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
+        shuffledOthers.slice(0, 2).forEach(randomOther => {
+          candidatesList.push({
+            ...randomOther.strategist,
+            entityType: 'strategist',
+            sourceTeam: randomOther.teamName,
+            sourceSeason: randomOther.season,
+          });
         });
       }
       setCandidates(candidatesList);
@@ -1578,12 +1442,14 @@ export default function App() {
       // Alt engineer
       const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
       if (otherCombos.length > 0) {
-        const randomOther = otherCombos[Math.floor(Math.random() * otherCombos.length)];
-        candidatesList.push({
-          ...randomOther.engineer,
-          entityType: 'engineer',
-          sourceTeam: randomOther.teamName,
-          sourceSeason: randomOther.season,
+        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
+        shuffledOthers.slice(0, 2).forEach(randomOther => {
+          candidatesList.push({
+            ...randomOther.engineer,
+            entityType: 'engineer',
+            sourceTeam: randomOther.teamName,
+            sourceSeason: randomOther.season,
+          });
         });
       }
       setCandidates(candidatesList);
@@ -1783,9 +1649,7 @@ export default function App() {
       const d1 = pSlots['driver_1'];
       const d2 = pSlots['driver_2'];
       const reserve1 = pSlots['reserve_1'];
-      const reserve2 = pSlots['reserve_2'];
-      const wetSpecialist = pSlots['wet_specialist'];
-      const legacyWildcard = pSlots['legacy_wildcard'];
+      const engine = pSlots['engine'];
       const boss = pSlots['team_boss'];
       const chassis = pSlots['chassis'];
       const strategist = pSlots['strategist'];
@@ -1799,10 +1663,13 @@ export default function App() {
       const strategistRating = strategist?.rating_geral || 85;
       const engineerRating = engineer?.rating_geral || 85;
 
-      const supportBonus = ((reserve1?.rating_geral || 80) + (reserve2?.rating_geral || 80)) / 40;
-      const legacyBonus = (legacyWildcard?.rating_geral || 80) / 30;
+      const enginePower = (engine?.powerBias || 8.5) * 10;
+      const engineReliability = (engine?.reliabilityBias || 8.5) * 10;
+      const engineDriveability = (engine?.driveabilityBias || 8.5) * 10;
 
-      const reliabilityScore = ((chassis?.reliability || 85) + engineerRating + (boss?.pressure_handling || 85)) / 3 + totalComboBonus / 2;
+      const supportBonus = (reserve1?.rating_geral || 80) / 20;
+
+      const reliabilityScore = ((chassis?.reliability || 85) + engineerRating + (boss?.pressure_handling || 85) + engineReliability) / 4 + totalComboBonus / 2;
 
       const playerStrat = strategies[player.id] || 'equilibrada';
       const playerCard = cards[player.id]?.racesLeft > 0 ? cards[player.id].cardId : null;
@@ -1863,9 +1730,9 @@ export default function App() {
         name: d1?.name || `${player.name} Piloto 1`,
         team: player.teamName,
         color: player.color,
-        pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + stratPaceMod + cardPaceMod + (cardWinnerPush ? 15 : 0),
-        consistency: (d1?.consistency || 85) + (bossRating * 0.08) + totalComboBonus / 4 + stratConsistencyMod,
-        chuva: (d1?.chuva || 85) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4 + stratChuvaMod,
+        pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + (enginePower * 0.12) + totalComboBonus / 3 + supportBonus + stratPaceMod + cardPaceMod + (cardWinnerPush ? 15 : 0),
+        consistency: (d1?.consistency || 85) + (bossRating * 0.08) + (engineDriveability * 0.06) + totalComboBonus / 4 + stratConsistencyMod,
+        chuva: (d1?.chuva || 85) + (engineDriveability * 0.05) + totalComboBonus / 4 + stratChuvaMod,
         aggressiveness: d1?.aggressiveness || 85,
         reliability: reliabilityScore + stratReliabilityMod + cardReliabilityMod,
         isUser: true,
@@ -1878,9 +1745,9 @@ export default function App() {
         name: d2?.name || `${player.name} Piloto 2`,
         team: player.teamName,
         color: player.color,
-        pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + stratPaceMod + cardPaceMod + (cardDriver2Push ? 12 : 0),
-        consistency: (d2?.consistency || 82) + (bossRating * 0.08) + totalComboBonus / 4 + stratConsistencyMod,
-        chuva: (d2?.chuva || 83) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4 + stratChuvaMod,
+        pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + (enginePower * 0.12) + totalComboBonus / 3 + supportBonus + stratPaceMod + cardPaceMod + (cardDriver2Push ? 12 : 0),
+        consistency: (d2?.consistency || 82) + (bossRating * 0.08) + (engineDriveability * 0.06) + totalComboBonus / 4 + stratConsistencyMod,
+        chuva: (d2?.chuva || 83) + (engineDriveability * 0.05) + totalComboBonus / 4 + stratChuvaMod,
         aggressiveness: d2?.aggressiveness || 85,
         reliability: reliabilityScore + stratReliabilityMod + cardReliabilityMod,
         isUser: true,
@@ -1892,7 +1759,133 @@ export default function App() {
       userDrivers.push(userDriver1, userDriver2);
     });
 
-    const gridDrivers: DriverEntry[] = [...RIVAL_DRIVERS, ...userDrivers];
+    const normalizeDriverNameForGrid = (fullName: string) => {
+      if (!fullName) return '';
+      return fullName
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .split(' (')[0]
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+    };
+
+    const hiredNames = new Set<string>();
+    userDrivers.forEach(ud => {
+      if (ud.name) hiredNames.add(normalizeDriverNameForGrid(ud.name));
+    });
+
+    const RIVAL_REPLACEMENTS: Record<string, { name: string; pace: number; consistency: number; chuva: number; aggressiveness: number; reliability: number }[]> = {
+      'Michael Schumacher': [
+        { name: 'Kimi Räikkönen', pace: 93, consistency: 94, chuva: 90, aggressiveness: 82, reliability: 95 },
+        { name: 'Felipe Massa', pace: 88, consistency: 87, chuva: 85, aggressiveness: 84, reliability: 92 },
+        { name: 'Jean Alesi', pace: 86, consistency: 84, chuva: 92, aggressiveness: 88, reliability: 85 }
+      ],
+      'Rubens Barrichello': [
+        { name: 'Eddie Irvine', pace: 85, consistency: 86, chuva: 82, aggressiveness: 83, reliability: 90 },
+        { name: 'Felipe Massa', pace: 88, consistency: 87, chuva: 85, aggressiveness: 84, reliability: 92 },
+        { name: 'Gerhard Berger', pace: 89, consistency: 88, chuva: 87, aggressiveness: 85, reliability: 91 }
+      ],
+      'Ayrton Senna': [
+        { name: 'Mika Häkkinen', pace: 96, consistency: 93, chuva: 94, aggressiveness: 88, reliability: 92 },
+        { name: 'Gerhard Berger', pace: 89, consistency: 88, chuva: 87, aggressiveness: 85, reliability: 91 },
+        { name: 'Stefan Johansson', pace: 82, consistency: 84, chuva: 80, aggressiveness: 75, reliability: 89 }
+      ],
+      'Alain Prost': [
+        { name: 'Niki Lauda', pace: 94, consistency: 98, chuva: 85, aggressiveness: 72, reliability: 97 },
+        { name: 'Keke Rosberg', pace: 91, consistency: 88, chuva: 89, aggressiveness: 94, reliability: 86 },
+        { name: 'Damon Hill', pace: 89, consistency: 91, chuva: 92, aggressiveness: 80, reliability: 93 }
+      ],
+      'Max Verstappen': [
+        { name: 'Daniel Ricciardo', pace: 90, consistency: 89, chuva: 88, aggressiveness: 85, reliability: 93 },
+        { name: 'Carlos Sainz', pace: 89, consistency: 91, chuva: 88, aggressiveness: 82, reliability: 94 },
+        { name: 'Lando Norris', pace: 91, consistency: 90, chuva: 89, aggressiveness: 84, reliability: 95 }
+      ],
+      'Sergio Pérez': [
+        { name: 'Nico Hülkenberg', pace: 84, consistency: 85, chuva: 84, aggressiveness: 80, reliability: 91 },
+        { name: 'Esteban Ocon', pace: 83, consistency: 86, chuva: 85, aggressiveness: 83, reliability: 90 },
+        { name: 'Alexander Albon', pace: 85, consistency: 84, chuva: 82, aggressiveness: 81, reliability: 92 }
+      ],
+      'Lewis Hamilton': [
+        { name: 'George Russell', pace: 90, consistency: 88, chuva: 89, aggressiveness: 86, reliability: 93 },
+        { name: 'Nico Rosberg', pace: 92, consistency: 91, chuva: 88, aggressiveness: 85, reliability: 94 },
+        { name: 'Jenson Button', pace: 88, consistency: 95, chuva: 97, aggressiveness: 78, reliability: 96 }
+      ],
+      'Valtteri Bottas': [
+        { name: 'Heikki Kovalainen', pace: 83, consistency: 82, chuva: 80, aggressiveness: 78, reliability: 89 },
+        { name: 'Esteban Ocon', pace: 83, consistency: 86, chuva: 85, aggressiveness: 83, reliability: 90 },
+        { name: 'George Russell', pace: 90, consistency: 88, chuva: 89, aggressiveness: 86, reliability: 93 }
+      ],
+      'Nigel Mansell': [
+        { name: 'Damon Hill', pace: 89, consistency: 91, chuva: 92, aggressiveness: 80, reliability: 93 },
+        { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+        { name: 'Thierry Boutsen', pace: 84, consistency: 85, chuva: 83, aggressiveness: 76, reliability: 90 }
+      ],
+      'Riccardo Patrese': [
+        { name: 'Jacques Villeneuve', pace: 91, consistency: 87, chuva: 85, aggressiveness: 90, reliability: 89 },
+        { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+        { name: 'Thierry Boutsen', pace: 84, consistency: 85, chuva: 83, aggressiveness: 76, reliability: 90 }
+      ],
+      'Fernando Alonso': [
+        { name: 'Jarno Trulli', pace: 87, consistency: 85, chuva: 83, aggressiveness: 79, reliability: 91 },
+        { name: 'Nelson Piquet Jr', pace: 78, consistency: 75, chuva: 78, aggressiveness: 80, reliability: 82 },
+        { name: 'Romain Grosjean', pace: 84, consistency: 78, chuva: 80, aggressiveness: 86, reliability: 81 }
+      ],
+      'Giancarlo Fisichella': [
+        { name: 'Jarno Trulli', pace: 87, consistency: 85, chuva: 83, aggressiveness: 79, reliability: 91 },
+        { name: 'Heikki Kovalainen', pace: 83, consistency: 82, chuva: 80, aggressiveness: 78, reliability: 89 },
+        { name: 'Nelson Piquet Jr', pace: 78, consistency: 75, chuva: 78, aggressiveness: 80, reliability: 82 }
+      ],
+      'Sebastian Vettel': [
+        { name: 'Kimi Räikkönen', pace: 93, consistency: 94, chuva: 90, aggressiveness: 82, reliability: 95 },
+        { name: 'Daniel Ricciardo', pace: 90, consistency: 89, chuva: 88, aggressiveness: 85, reliability: 93 },
+        { name: 'Mark Webber', pace: 88, consistency: 89, chuva: 86, aggressiveness: 85, reliability: 92 }
+      ],
+      'Mark Webber': [
+        { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+        { name: 'Nick Heidfeld', pace: 85, consistency: 89, chuva: 87, aggressiveness: 77, reliability: 93 },
+        { name: 'Christian Klien', pace: 79, consistency: 80, chuva: 76, aggressiveness: 82, reliability: 86 }
+      ]
+    };
+
+    const usedReplacementNames = new Set<string>();
+
+    const cleanRivalDrivers = RIVAL_DRIVERS.map(rival => {
+      const rivalNorm = normalizeDriverNameForGrid(rival.name);
+      if (hiredNames.has(rivalNorm)) {
+        const replacements = RIVAL_REPLACEMENTS[rival.name] || [];
+        let chosenRep = replacements.find(rep => {
+          const repNorm = normalizeDriverNameForGrid(rep.name);
+          return !hiredNames.has(repNorm) && !usedReplacementNames.has(repNorm);
+        });
+        if (!chosenRep) {
+          const fallbacks = [
+            { name: 'Robert Kubica', pace: 88, consistency: 90, chuva: 89, aggressiveness: 84, reliability: 91 },
+            { name: 'Heinz-Harald Frentzen', pace: 86, consistency: 85, chuva: 88, aggressiveness: 80, reliability: 89 },
+            { name: 'Johnny Herbert', pace: 84, consistency: 85, chuva: 83, aggressiveness: 78, reliability: 90 },
+            { name: 'Nick Heidfeld', pace: 85, consistency: 89, chuva: 87, aggressiveness: 77, reliability: 93 },
+            { name: 'Olivier Panis', pace: 83, consistency: 84, chuva: 85, aggressiveness: 76, reliability: 88 },
+          ];
+          chosenRep = fallbacks.find(rep => {
+            const repNorm = normalizeDriverNameForGrid(rep.name);
+            return !hiredNames.has(repNorm) && !usedReplacementNames.has(repNorm);
+          }) || { name: 'Piloto Reserva Legendário', pace: 82, consistency: 82, chuva: 82, aggressiveness: 80, reliability: 88 };
+        }
+        usedReplacementNames.add(normalizeDriverNameForGrid(chosenRep.name));
+        return {
+          ...rival,
+          name: chosenRep.name,
+          pace: chosenRep.pace,
+          consistency: chosenRep.consistency,
+          chuva: chosenRep.chuva,
+          aggressiveness: chosenRep.aggressiveness,
+          reliability: chosenRep.reliability,
+        };
+      }
+      return rival;
+    });
+
+    const gridDrivers: DriverEntry[] = [...cleanRivalDrivers, ...userDrivers];
     const race = CIRCUITS[gpIdx];
     const driverRaceScores: { driver: DriverEntry; score: number; dnf: boolean; dnfReason?: string; trackEffect?: string }[] = [];
 
@@ -1915,9 +1908,7 @@ export default function App() {
       }
 
       if (race.isWet) {
-        const pSlots = drv.slots;
-        const wetSpecialistChuva = pSlots?.['wet_specialist']?.chuva || 80;
-        const wetAdvantage = drv.isUser ? (drv.chuva * 0.7 + wetSpecialistChuva * 0.3) : drv.chuva;
+        const wetAdvantage = drv.chuva;
         baseGridScore = (wetAdvantage * 0.8) + (drv.pace * 0.2) + 12;
       }
 
@@ -2058,7 +2049,7 @@ export default function App() {
       return b.score - a.score;
     });
 
-    const f1Points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+    const f1Points = [10, 8, 6, 5, 4, 3, 2, 1, 0, 0];
     const podium: { driver: string; team: string; color: string }[] = [];
     const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string; trackEffect?: string }[] = [];
 
@@ -2499,7 +2490,7 @@ export default function App() {
 
   // Recalculate standings on-the-fly when support/buff cards are applied
   const recalculateStandingsFromRaces = (raceResults: any[]) => {
-    const pointsList = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+    const pointsList = [10, 8, 6, 5, 4, 3, 2, 1, 0, 0];
     const driverStandingsMap: Record<string, { points: number; wins: number; podiums: number; dnfCount: number; team: string; color: string; isUser: boolean }> = {};
     const teamStandingsMap: Record<string, number> = {};
 
@@ -2746,15 +2737,13 @@ export default function App() {
       slots['driver_1']?.rating_geral || 80,
       slots['driver_2']?.rating_geral || 80,
       slots['reserve_1']?.rating_geral || 80,
-      slots['reserve_2']?.rating_geral || 80,
-      slots['wet_specialist']?.rating_geral || 80,
-      slots['legacy_wildcard']?.rating_geral || 80,
+      slots['engine']?.rating_geral || (slots['engine']?.powerBias ? slots['engine'].powerBias * 10 : 80),
       slots['team_boss']?.rating_geral || 80,
       slots['chassis']?.rating_geral || 80,
       slots['strategist']?.rating_geral || 80,
       slots['engineer']?.rating_geral || 80,
     ];
-    const avgRating = Math.round(ratingsArray.reduce((src, val) => src + val, 0) / 10);
+    const avgRating = Math.round(ratingsArray.reduce((src, val) => src + val, 0) / 8);
     const rankObj = evaluateQualityRank(avgRating);
 
     const userBest = simulationResult.driverStandings.find((d: any) => d.isUser);
@@ -2837,15 +2826,13 @@ export default function App() {
         slots['driver_1']?.rating_geral || 80,
         slots['driver_2']?.rating_geral || 80,
         slots['reserve_1']?.rating_geral || 80,
-        slots['reserve_2']?.rating_geral || 80,
-        slots['wet_specialist']?.rating_geral || 80,
-        slots['legacy_wildcard']?.rating_geral || 80,
+        slots['engine']?.rating_geral || (slots['engine']?.powerBias ? slots['engine'].powerBias * 10 : 80),
         slots['team_boss']?.rating_geral || 80,
         slots['chassis']?.rating_geral || 80,
         slots['strategist']?.rating_geral || 80,
         slots['engineer']?.rating_geral || 80,
       ];
-      const avgRating = Math.round(ratingsArray.reduce((src, val) => src + val, 0) / 10);
+      const avgRating = Math.round(ratingsArray.reduce((src, val) => src + val, 0) / 8);
       const rankObj = evaluateQualityRank(avgRating);
 
       const activeCombosObj = detectCombos(slots);
@@ -2917,9 +2904,13 @@ Jogue agora em: ${window.location.href}`;
   // Average Rating
   const activeAvgRating = (customSlots?: Record<string, any>) => {
     const targetSlots = customSlots || slots;
-    const keys = Object.keys(targetSlots);
+    const keys = Object.keys(targetSlots).filter(k => targetSlots[k] !== null && targetSlots[k] !== undefined);
     if (keys.length === 0) return 0;
-    const sum = keys.reduce((acc, k) => acc + (targetSlots[k]?.rating_geral || 80), 0);
+    const sum = keys.reduce((acc, k) => {
+      const item = targetSlots[k];
+      const rating = item?.rating_geral || (item?.powerBias ? item.powerBias * 10 : 80);
+      return acc + rating;
+    }, 0);
     return Math.round(sum / keys.length);
   };
 
@@ -2935,8 +2926,8 @@ Jogue agora em: ${window.location.href}`;
     }[] = [];
 
     // Helper to check if any slot matching driver roles is empty
-    const anyDriverSlotEmpty = GAME_SLOTS.some(s => s.id.includes('driver') || s.id.includes('reserve') || s.id === 'wet_specialist' || s.id === 'legacy_wildcard') && 
-      !GAME_SLOTS.filter(s => s.id.includes('driver') || s.id.includes('reserve') || s.id === 'wet_specialist' || s.id === 'legacy_wildcard').every(s => slots[s.id]);
+    const anyDriverSlotEmpty = GAME_SLOTS.some(s => s.id.includes('driver') || s.id === 'reserve_1') && 
+      !GAME_SLOTS.filter(s => s.id.includes('driver') || s.id === 'reserve_1').every(s => slots[s.id]);
 
     const isSlotEmpty = (id: string) => !slots[id];
 
@@ -2945,9 +2936,6 @@ Jogue agora em: ${window.location.href}`;
       slots['driver_1'],
       slots['driver_2'],
       slots['reserve_1'],
-      slots['reserve_2'],
-      slots['wet_specialist'],
-      slots['legacy_wildcard']
     ].filter(Boolean);
 
     const hasSenna = drivers.some(d => d.name?.toLowerCase().includes('senna'));
@@ -3143,13 +3131,13 @@ Jogue agora em: ${window.location.href}`;
 
     // Standard tactical slot tips if nothing else takes high priority (below 3 tips)
     if (tips.length < 3) {
-      if (isSlotEmpty('wet_specialist')) {
+      if (isSlotEmpty('engine')) {
         tips.push({
-          id: 'wet_tactical',
-          title: 'Chuva no Horizonte 🌧️',
-          description: 'A temporada conta com vários GPs sob chuva rigorosa (Cingapura, Interlagos). Consiga um bom piloto de Chuva (95+) para garantir pontos cruciais.',
+          id: 'engine_tactical',
+          title: 'Unidade de Potência / Motor ⚡',
+          description: 'O motor determina a velocidade máxima em retas e arrancadas rápidas. Garanta um ótimo motor (Mercedes ou Ferrari) para decolar no grid.',
           priority: 'baixa',
-          targetSlotId: 'wet_specialist',
+          targetSlotId: 'engine',
           icon: 'info'
         });
       }

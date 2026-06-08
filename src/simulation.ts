@@ -218,10 +218,143 @@ export function runChampionshipSimulation(
   const standsDnfCount: Record<string, number> = {};
   const teamPoints: Record<string, number> = {};
 
+  const normalizeDriverNameForGrid = (fullName: string) => {
+    if (!fullName) return '';
+    return fullName
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .split(' (')[0]
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  };
+
+  // 1. Check which drivers have been hired by the player(s)
+  const hiredNames = new Set<string>();
+  finalPlayers.forEach(player => {
+    const pSlots = player.slots;
+    if (pSlots) {
+      const d1 = pSlots['driver_1'];
+      const d2 = pSlots['driver_2'];
+      if (d1 && d1.name) hiredNames.add(normalizeDriverNameForGrid(d1.name));
+      if (d2 && d2.name) hiredNames.add(normalizeDriverNameForGrid(d2.name));
+    }
+  });
+
+  const RIVAL_REPLACEMENTS: Record<string, { name: string; pace: number; consistency: number; chuva: number; aggressiveness: number; reliability: number }[]> = {
+    'Michael Schumacher': [
+      { name: 'Kimi Räikkönen', pace: 93, consistency: 94, chuva: 90, aggressiveness: 82, reliability: 95 },
+      { name: 'Felipe Massa', pace: 88, consistency: 87, chuva: 85, aggressiveness: 84, reliability: 92 },
+      { name: 'Jean Alesi', pace: 86, consistency: 84, chuva: 92, aggressiveness: 88, reliability: 85 }
+    ],
+    'Rubens Barrichello': [
+      { name: 'Eddie Irvine', pace: 85, consistency: 86, chuva: 82, aggressiveness: 83, reliability: 90 },
+      { name: 'Felipe Massa', pace: 88, consistency: 87, chuva: 85, aggressiveness: 84, reliability: 92 },
+      { name: 'Gerhard Berger', pace: 89, consistency: 88, chuva: 87, aggressiveness: 85, reliability: 91 }
+    ],
+    'Ayrton Senna': [
+      { name: 'Mika Häkkinen', pace: 96, consistency: 93, chuva: 94, aggressiveness: 88, reliability: 92 },
+      { name: 'Gerhard Berger', pace: 89, consistency: 88, chuva: 87, aggressiveness: 85, reliability: 91 },
+      { name: 'Stefan Johansson', pace: 82, consistency: 84, chuva: 80, aggressiveness: 75, reliability: 89 }
+    ],
+    'Alain Prost': [
+      { name: 'Niki Lauda', pace: 94, consistency: 98, chuva: 85, aggressiveness: 72, reliability: 97 },
+      { name: 'Keke Rosberg', pace: 91, consistency: 88, chuva: 89, aggressiveness: 94, reliability: 86 },
+      { name: 'Damon Hill', pace: 89, consistency: 91, chuva: 92, aggressiveness: 80, reliability: 93 }
+    ],
+    'Max Verstappen': [
+      { name: 'Daniel Ricciardo', pace: 90, consistency: 89, chuva: 88, aggressiveness: 85, reliability: 93 },
+      { name: 'Carlos Sainz', pace: 89, consistency: 91, chuva: 88, aggressiveness: 82, reliability: 94 },
+      { name: 'Lando Norris', pace: 91, consistency: 90, chuva: 89, aggressiveness: 84, reliability: 95 }
+    ],
+    'Sergio Pérez': [
+      { name: 'Nico Hülkenberg', pace: 84, consistency: 85, chuva: 84, aggressiveness: 80, reliability: 91 },
+      { name: 'Esteban Ocon', pace: 83, consistency: 86, chuva: 85, aggressiveness: 83, reliability: 90 },
+      { name: 'Alexander Albon', pace: 85, consistency: 84, chuva: 82, aggressiveness: 81, reliability: 92 }
+    ],
+    'Lewis Hamilton': [
+      { name: 'George Russell', pace: 90, consistency: 88, chuva: 89, aggressiveness: 86, reliability: 93 },
+      { name: 'Nico Rosberg', pace: 92, consistency: 91, chuva: 88, aggressiveness: 85, reliability: 94 },
+      { name: 'Jenson Button', pace: 88, consistency: 95, chuva: 97, aggressiveness: 78, reliability: 96 }
+    ],
+    'Valtteri Bottas': [
+      { name: 'Heikki Kovalainen', pace: 83, consistency: 82, chuva: 80, aggressiveness: 78, reliability: 89 },
+      { name: 'Esteban Ocon', pace: 83, consistency: 86, chuva: 85, aggressiveness: 83, reliability: 90 },
+      { name: 'George Russell', pace: 90, consistency: 88, chuva: 89, aggressiveness: 86, reliability: 93 }
+    ],
+    'Nigel Mansell': [
+      { name: 'Damon Hill', pace: 89, consistency: 91, chuva: 92, aggressiveness: 80, reliability: 93 },
+      { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+      { name: 'Thierry Boutsen', pace: 84, consistency: 85, chuva: 83, aggressiveness: 76, reliability: 90 }
+    ],
+    'Riccardo Patrese': [
+      { name: 'Jacques Villeneuve', pace: 91, consistency: 87, chuva: 85, aggressiveness: 90, reliability: 89 },
+      { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+      { name: 'Thierry Boutsen', pace: 84, consistency: 85, chuva: 83, aggressiveness: 76, reliability: 90 }
+    ],
+    'Fernando Alonso': [
+      { name: 'Jarno Trulli', pace: 87, consistency: 85, chuva: 83, aggressiveness: 79, reliability: 91 },
+      { name: 'Nelson Piquet Jr', pace: 78, consistency: 75, chuva: 78, aggressiveness: 80, reliability: 82 },
+      { name: 'Romain Grosjean', pace: 84, consistency: 78, chuva: 80, aggressiveness: 86, reliability: 81 }
+    ],
+    'Giancarlo Fisichella': [
+      { name: 'Jarno Trulli', pace: 87, consistency: 85, chuva: 83, aggressiveness: 79, reliability: 91 },
+      { name: 'Heikki Kovalainen', pace: 83, consistency: 82, chuva: 80, aggressiveness: 78, reliability: 89 },
+      { name: 'Nelson Piquet Jr', pace: 78, consistency: 75, chuva: 78, aggressiveness: 80, reliability: 82 }
+    ],
+    'Sebastian Vettel': [
+      { name: 'Kimi Räikkönen', pace: 93, consistency: 94, chuva: 90, aggressiveness: 82, reliability: 95 },
+      { name: 'Daniel Ricciardo', pace: 90, consistency: 89, chuva: 88, aggressiveness: 85, reliability: 93 },
+      { name: 'Mark Webber', pace: 88, consistency: 89, chuva: 86, aggressiveness: 85, reliability: 92 }
+    ],
+    'Mark Webber': [
+      { name: 'David Coulthard', pace: 86, consistency: 88, chuva: 84, aggressiveness: 78, reliability: 92 },
+      { name: 'Nick Heidfeld', pace: 85, consistency: 89, chuva: 87, aggressiveness: 77, reliability: 93 },
+      { name: 'Christian Klien', pace: 79, consistency: 80, chuva: 76, aggressiveness: 82, reliability: 86 }
+    ]
+  };
+
+  const usedReplacementNames = new Set<string>();
+
+  const cleanRivalDrivers = RIVAL_DRIVERS.map(rival => {
+    const rivalNorm = normalizeDriverNameForGrid(rival.name);
+    if (hiredNames.has(rivalNorm)) {
+      const replacements = RIVAL_REPLACEMENTS[rival.name] || [];
+      let chosenRep = replacements.find(rep => {
+        const repNorm = normalizeDriverNameForGrid(rep.name);
+        return !hiredNames.has(repNorm) && !usedReplacementNames.has(repNorm);
+      });
+      if (!chosenRep) {
+        const fallbacks = [
+          { name: 'Robert Kubica', pace: 88, consistency: 90, chuva: 89, aggressiveness: 84, reliability: 91 },
+          { name: 'Heinz-Harald Frentzen', pace: 86, consistency: 85, chuva: 88, aggressiveness: 80, reliability: 89 },
+          { name: 'Johnny Herbert', pace: 84, consistency: 85, chuva: 83, aggressiveness: 78, reliability: 90 },
+          { name: 'Nick Heidfeld', pace: 85, consistency: 89, chuva: 87, aggressiveness: 77, reliability: 93 },
+          { name: 'Olivier Panis', pace: 83, consistency: 84, chuva: 85, aggressiveness: 76, reliability: 88 },
+        ];
+        chosenRep = fallbacks.find(rep => {
+          const repNorm = normalizeDriverNameForGrid(rep.name);
+          return !hiredNames.has(repNorm) && !usedReplacementNames.has(repNorm);
+        }) || { name: 'Piloto Reserva Legendário', pace: 82, consistency: 82, chuva: 82, aggressiveness: 80, reliability: 88 };
+      }
+      usedReplacementNames.add(normalizeDriverNameForGrid(chosenRep.name));
+      return {
+        ...rival,
+        name: chosenRep.name,
+        pace: chosenRep.pace,
+        consistency: chosenRep.consistency,
+        chuva: chosenRep.chuva,
+        aggressiveness: chosenRep.aggressiveness,
+        reliability: chosenRep.reliability,
+      };
+    }
+    return rival;
+  });
+
   // Pre-seed rival teammate links
-  for (let i = 0; i < RIVAL_DRIVERS.length; i += 2) {
-    const drv1 = RIVAL_DRIVERS[i];
-    const drv2 = RIVAL_DRIVERS[i+1];
+  for (let i = 0; i < cleanRivalDrivers.length; i += 2) {
+    const drv1 = cleanRivalDrivers[i];
+    const drv2 = cleanRivalDrivers[i+1];
     if (drv1 && drv2) {
       teammateOf[`${drv1.name} (${drv1.team})`] = `${drv2.name} (${drv2.team})`;
       teammateOf[`${drv2.name} (${drv2.team})`] = `${drv1.name} (${drv1.team})`;
@@ -233,9 +366,7 @@ export function runChampionshipSimulation(
     const d1 = pSlots['driver_1'];
     const d2 = pSlots['driver_2'];
     const reserve1 = pSlots['reserve_1'];
-    const reserve2 = pSlots['reserve_2'];
-    const wetSpecialist = pSlots['wet_specialist'];
-    const legacyWildcard = pSlots['legacy_wildcard'];
+    const engine = pSlots['engine'];
     const boss = pSlots['team_boss'];
     const chassis = pSlots['chassis'];
     const strategist = pSlots['strategist'];
@@ -294,23 +425,26 @@ export function runChampionshipSimulation(
     const strategistRating = strategist?.rating_geral || 85;
     const engineerRating = engineer?.rating_geral || 85;
 
+    const enginePower = (engine?.powerBias || 8.5) * 10;
+    const engineReliability = (engine?.reliabilityBias || 8.5) * 10;
+    const engineDriveability = (engine?.driveabilityBias || 8.5) * 10;
+
     // Backup support bonus
-    const supportBonus = ((reserve1?.rating_geral || 80) + (reserve2?.rating_geral || 80)) / 40; // max ~4.5 points bonus
-    const legacyBonus = (legacyWildcard?.rating_geral || 80) / 30; // max ~3.3 points
+    const supportBonus = (reserve1?.rating_geral || 80) / 20;
 
     // Strategy efficiency
     const stratFactor = (strategistRating + bossRating) / 2; // base 50-100
     // Reliability score (impacted heavily by active crew/driver rivalries)
-    const reliabilityScore = ((chassis?.reliability || 85) + (engineerRating) + (boss?.pressure_handling || 85)) / 3 + totalComboBonus / 2 + rivalryReliabilityDebuff;
+    const reliabilityScore = ((chassis?.reliability || 85) + engineerRating + (boss?.pressure_handling || 85) + engineReliability) / 4 + totalComboBonus / 2 + rivalryReliabilityDebuff;
 
     // Build User Driver 1 Entry
     const userDriver1: DriverEntry = {
       name: d1Name,
       team: player.teamName,
       color: player.color,
-      pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + rivalryPaceBonus,
-      consistency: (d1?.consistency || 85) + (bossRating * 0.08) + totalComboBonus / 4,
-      chuva: (d1?.chuva || 85) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4,
+      pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + (enginePower * 0.12) + totalComboBonus / 3 + supportBonus + rivalryPaceBonus,
+      consistency: (d1?.consistency || 85) + (bossRating * 0.08) + (engineDriveability * 0.06) + totalComboBonus / 4,
+      chuva: (d1?.chuva || 85) + (engineDriveability * 0.05) + totalComboBonus / 4,
       aggressiveness: d1?.aggressiveness || 85,
       reliability: reliabilityScore,
       isUser: true,
@@ -324,9 +458,9 @@ export function runChampionshipSimulation(
       name: d2Name,
       team: player.teamName,
       color: player.color,
-      pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + rivalryPaceBonus,
-      consistency: (d2?.consistency || 82) + (bossRating * 0.08) + totalComboBonus / 4,
-      chuva: (d2?.chuva || 83) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4,
+      pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + (enginePower * 0.12) + totalComboBonus / 3 + supportBonus + rivalryPaceBonus,
+      consistency: (d2?.consistency || 82) + (bossRating * 0.08) + (engineDriveability * 0.06) + totalComboBonus / 4,
+      chuva: (d2?.chuva || 83) + (engineDriveability * 0.05) + totalComboBonus / 4,
       aggressiveness: d2?.aggressiveness || 85,
       reliability: reliabilityScore,
       isUser: true,
@@ -339,7 +473,7 @@ export function runChampionshipSimulation(
   });
 
   // Compile active grid of drivers
-  const gridDrivers: DriverEntry[] = [...RIVAL_DRIVERS, ...userDrivers];
+  const gridDrivers: DriverEntry[] = [...cleanRivalDrivers, ...userDrivers];
 
   gridDrivers.forEach(d => {
     const dKey = `${d.name} (${d.team})`;
@@ -364,7 +498,7 @@ export function runChampionshipSimulation(
   const raceResults: SimulationRaceResult[] = [];
 
   // F1 Points System: 1st through 10th
-  const f1Points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+  const f1Points = [10, 8, 6, 5, 4, 3, 2, 1, 0, 0];
 
   // 3. Loop over courses
   CIRCUITS.forEach((race, raceIdx) => {
@@ -407,15 +541,12 @@ export function runChampionshipSimulation(
 
       // Wet weather check
       if (race.isWet) {
-        const pSlots = drv.slots;
-        const wetSpecialistChuva = pSlots?.['wet_specialist']?.chuva || 80;
-        const wetAdvantage = drv.isUser ? (drv.chuva * 0.7 + wetSpecialistChuva * 0.3) : drv.chuva;
+        const wetAdvantage = drv.chuva;
         baseGridScore = (wetAdvantage * 0.8) + (adjustedPace * 0.2) + 12;
 
-        if (drv.isUser && pSlots?.['wet_specialist']) {
-          const wetSpecialist = pSlots['wet_specialist'];
+        if (drv.isUser) {
           if (raceIdx === 0 && !championStoryTriggered) {
-            narrationHighlights.push(`GP do Brasil sob temporal! O Especialista em Chuva (${wetSpecialist.name}) deu feedbacks cruciais nas curvas de Interlagos para a escuderia ${drv.team}, melhorando o acerto.`);
+            narrationHighlights.push(`GP do Brasil sob temporal! O piloto da ${drv.team} tenta dominar as curvas de Interlagos.`);
           }
         }
       }

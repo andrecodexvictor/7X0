@@ -24,34 +24,26 @@ export const GAME_SLOTS: GameSlot[] = [
   },
   {
     id: 'reserve_1',
-    name: 'Piloto Reserva 1',
+    name: 'Piloto Reserva',
     description: 'Piloto reserva e de suporte. Traz consistência e estabilidade caso precise de cobertura.',
     icon: 'Shield',
     type: 'driver',
     filledWith: null,
   },
   {
-    id: 'reserve_2',
-    name: 'Piloto Reserva 2/Histórico',
-    description: 'Piloto clássico que serve como mentor. Ajuda a impulsionar o desenvolvimento técnico.',
-    icon: 'History',
-    type: 'driver',
+    id: 'engine',
+    name: 'Unidade de Potência / Motor',
+    description: 'Determina a aceleração, velocidade final e robustez do propulsor.',
+    icon: 'Zap',
+    type: 'engine',
     filledWith: null,
   },
   {
-    id: 'wet_specialist',
-    name: 'Especialista em Chuva',
-    description: 'Piloto conhecido pelo seu maestrismo sob as pistas molhadas. Dá bônus gigante em GPs de chuva!',
-    icon: 'CloudRain',
-    type: 'driver',
-    filledWith: null,
-  },
-  {
-    id: 'legacy_wildcard',
-    name: 'Coringa do Legado',
-    description: 'Uma lenda livre! Pode receber bônus por era ou sinergia de nacionalidade.',
-    icon: 'Sparkles',
-    type: 'driver',
+    id: 'chassis',
+    name: 'Carro / Chassi',
+    description: 'A máquina! Determina a velocidade máxima base, aerodinâmica e confiabilidade técnica.',
+    icon: 'Cpu',
+    type: 'chassis',
     filledWith: null,
   },
   {
@@ -63,11 +55,11 @@ export const GAME_SLOTS: GameSlot[] = [
     filledWith: null,
   },
   {
-    id: 'chassis',
-    name: 'Carro / Chassi',
-    description: 'A máquina! Determina a velocidade máxima base, aerodinâmica e confiabilidade do motor.',
-    icon: 'Cpu',
-    type: 'chassis',
+    id: 'engineer',
+    name: 'Engenheiro Chefe',
+    description: 'Responsável pelo desenvolvimento aerodinâmico e refinamento mecânico do carro.',
+    icon: 'Wrench',
+    type: 'engineer',
     filledWith: null,
   },
   {
@@ -76,14 +68,6 @@ export const GAME_SLOTS: GameSlot[] = [
     description: 'O cérebro na mureta de boxes. Inteligência de pit stops e chamadas em safety-cars.',
     icon: 'Compass',
     type: 'strategist',
-    filledWith: null,
-  },
-  {
-    id: 'engineer',
-    name: 'Engenheiro Chefe',
-    description: 'Responsável pelo desenvolvimento aerodinâmico e refinamento mecânico do carro.',
-    icon: 'Wrench',
-    type: 'engineer',
     filledWith: null,
   },
 ];
@@ -1697,9 +1681,6 @@ export function detectCombos(filledSlots: Record<string, any>): { name: string; 
     filledSlots['driver_1'],
     filledSlots['driver_2'],
     filledSlots['reserve_1'],
-    filledSlots['reserve_2'],
-    filledSlots['wet_specialist'],
-    filledSlots['legacy_wildcard']
   ].filter(Boolean);
 
   const chassis = filledSlots['chassis'];
@@ -1846,6 +1827,50 @@ export function detectCombos(filledSlots: Record<string, any>): { name: string; 
       bonusValue: 7,
       icon: 'landmark'
     });
+  }
+
+  // Engine / Power Unit synergies
+  const engine = filledSlots['engine'];
+  if (engine) {
+    const engineBrand = engine.brand?.toLowerCase() || '';
+    const chassisName = chassis?.name?.toLowerCase() || '';
+    
+    // Ferrari chassis + Ferrari engine
+    if (engineBrand === 'ferrari' && chassisName.includes('ferrari')) {
+      combos.push({
+        name: 'Compatibilidade Cavallino 🐎',
+        description: 'Chassi Ferrari combinado com o legítimo motor de Maranello. Harmonia técnica absoluta (+5 Confiabilidade, +4 Ritmo).',
+        bonusValue: 8,
+        icon: 'trophy'
+      });
+    }
+    // Mercedes chassis + Mercedes engine
+    if (engineBrand === 'mercedes' && chassisName.includes('mercedes')) {
+      combos.push({
+        name: 'Sinergia Flechas de Prata ⚡',
+        description: 'Chassi e motor integrados perfeitamente pelo departamento de Brixworth e Brackley (+6 Potência/Ritmo).',
+        bonusValue: 8,
+        icon: 'zap'
+      });
+    }
+    // McLaren chassis + Honda engine
+    if (engineBrand === 'honda' && chassisName.includes('mclaren')) {
+      combos.push({
+        name: 'Aliança Lendária McLaren-Honda 🏆',
+        description: 'Recriando um dos maiores domínios da F1, unindo chassi McLaren ao torque explosivo da Honda (+7 Ritmo, +5 Confiabilidade).',
+        bonusValue: 10,
+        icon: 'sparkles'
+      });
+    }
+    // Meme engines effects
+    if (engine.tier === 'meme') {
+      combos.push({
+        name: 'Motor Explosivo de Fundo de Grid 💥',
+        description: 'O motor escolhido é um desastre lendário. Boa sorte sobrevivendo à temporada! (-12 Confiabilidade, -8 Velocidade).',
+        bonusValue: -15,
+        icon: 'frown'
+      });
+    }
   }
 
   return combos;
