@@ -168,6 +168,17 @@ interface SavedSession {
   points: number;
 }
 
+const normalizeDriverNameGlobal = (fullName: string) => {
+  if (!fullName) return '';
+  return fullName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(' (')[0]
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+};
+
 export default function App() {
   // Navigation & States
   const [difficultyMode, setDifficultyMode] = useState<'normal' | 'hard' | 'underdog'>(() => {
@@ -1008,14 +1019,7 @@ export default function App() {
       };
 
       const normalizeDriverName = (fullName: string) => {
-        if (!fullName) return '';
-        return fullName
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .split(' (')[0]
-          .replace(/[^a-z0-9]/g, '')
-          .trim();
+        return normalizeDriverNameGlobal(fullName);
       };
 
       const draftedNorms = new Set<string>();
@@ -1508,6 +1512,31 @@ export default function App() {
     }
 
     const activeSlot = GAME_SLOTS[activeSlotIndex];
+    const playerSlots = isMultiplayer ? (multiplayerPlayers[activeMultiPlayerIndex]?.slots || {}) : slots;
+
+    // Guard 1: Lock selections once made
+    if (playerSlots[activeSlot.id]) {
+      triggerToast('🔒 Este slot já possui um contrato oficial assinado e não pode ser renegociado!');
+      playBeep(220, 0.15);
+      return;
+    }
+
+    // Guard 2: Prevent duplicating the same physical driver across your slots
+    if (item.entityType === 'driver') {
+      const targetNameNormalized = normalizeDriverNameGlobal(item.name);
+      const isDuplicate = Object.entries(playerSlots).some(([slotId, existingItem]) => {
+        if (slotId === activeSlot.id) return false;
+        const exist = existingItem as any;
+        return exist && exist.entityType === 'driver' && normalizeDriverNameGlobal(exist.name) === targetNameNormalized;
+      });
+
+      if (isDuplicate) {
+        triggerToast(`⚠️ O piloto ${item.name} já foi contratado para outro cockpit da sua escuderia!`);
+        playBeep(220, 0.15);
+        return;
+      }
+    }
+
     const newSlots = { ...slots, [activeSlot.id]: item };
     setSlots(newSlots);
 
@@ -4017,175 +4046,286 @@ Jogue agora em: ${window.location.href}`;
                     </button>
                   </div>
 
-                  {/* Descrição do pacote sorteado */}
-                  <div className="px-6 py-3 bg-[#FF1801]/5 border-b border-[#FF1801]/10 text-xs text-[#888] leading-relaxed italic">
-                    💡 O bólido e a engenharia apontaram para {activeCombo.teamName} na temporada histórica de {activeCombo.season}. Recrute as alternativas compatíveis abaixo para consolidar seu tempo de volta!
-                  </div>
+                  {(() => {
+                    const activeSlotId = GAME_SLOTS[activeSlotIndex]?.id;
+                    const playerSlots = isMultiplayer ? (multiplayerPlayers[activeMultiPlayerIndex]?.slots || {}) : slots;
+                    const filledCandidate = playerSlots[activeSlotId];
 
-                  {/* Espaço de Candidatos Elegíveis */}
-                  <div className="p-6 space-y-4">
-                    <h5 className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Alternativas Oficiais de Contrato:</h5>
-                    
-                    {/* Filtro Restritivo de Contratos */}
-                    <div className="bg-[#111] border border-[#222] p-3 rounded flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                      <div>
-                        <span className="font-bold text-gray-300 block uppercase tracking-wider text-[9px] font-mono mb-0.5">
-                          🛡️ Restrição do Cockpit (Licença Paddock)
-                        </span>
-                        <p className="text-[10px] text-[#777] font-sans leading-tight">
-                          {restrictiveMode === 'none' && "Paddock Aberto: Todos os pilotos do sorteio estão elegíveis para contratação."}
-                          {restrictiveMode === 'elite' && "Super Licença Elite: Apenas pilotos com rating >= 83 ou títulos de renome podem assinar."}
-                          {restrictiveMode === 'no-meme' && "Foco Profissional: Pilotos meme ou amadores com rating < 60 estão suspensos."}
-                          {restrictiveMode === 'only-meme' && "Desafio Renegados: Apenas pilotos meme ou fundo de grid são elegíveis!"}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-1 w-full sm:w-auto">
-                        <select
-                          id="select_restrictive_mode"
-                          value={restrictiveMode}
-                          onChange={(e) => {
-                            setRestrictiveMode(e.target.value as any);
-                            playBeep(600, 0.08);
-                          }}
-                          className="bg-[#050505]/80 border border-[#333] text-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#FF1801] text-xs font-mono w-full sm:w-auto cursor-pointer"
-                        >
-                          <option value="none">🔓 Paddock Aberto (Todos)</option>
-                          <option value="elite">👑 Super Licença Elite (GOATs)</option>
-                          <option value="no-meme">🛡️ Sem Pilotos Meme (Rating &gt;= 60)</option>
-                          <option value="only-meme">🤡 Apenas Pilotos Meme (Rating &lt; 80)</option>
-                        </select>
-                      </div>
-                    </div>
+                    if (filledCandidate) {
+                      return (
+                        <>
+                          {/* Alerta de Contrato Consolidado */}
+                          <div className="px-6 py-4 bg-amber-500/10 border-b border-amber-500/20 text-amber-500 text-xs flex items-start space-x-2.5">
+                            <Lock className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
+                            <div>
+                              <span className="font-bold uppercase block text-[10px] font-mono tracking-wider mb-0.5 text-amber-400">🔒 Contrato Consolidado</span>
+                              <p className="opacity-90 leading-relaxed">
+                                Esta vaga do grid de largada já foi contratada oficialmente por <strong>{filledCandidate.name}</strong> nesta partida. Uma vez selada a assinatura do contrato, o membro está confirmado e não pode ser renegociado.
+                              </p>
+                            </div>
+                          </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {candidates.map((cand) => {
-                        const slotId = GAME_SLOTS[activeSlotIndex]?.id;
-                        const currentComboNames = detectCombos(slots).map(c => c.name);
-                        const simulatedCombos = slotId ? detectCombos({ ...slots, [slotId]: cand }) : [];
-                        const activatedCombos = simulatedCombos.filter(c => !currentComboNames.includes(c.name));
-                        const isRestricted = isCandidateRestricted(cand);
-
-                        return (
-                          <div
-                            key={cand.id || cand.name}
-                            id={`candidate_card_${cand.id || cand.name}`}
-                            onClick={() => handleSelectCandidate(cand)}
-                            className={`bg-[#050505] border hover:bg-[#111]/30 rounded p-4 cursor-pointer transition-all text-left flex flex-col justify-between ${
-                              isRestricted
-                                ? 'opacity-30 border-red-950/45 bg-red-950/5 cursor-not-allowed hover:border-red-950'
-                                : 'border-[#222] hover:border-[#FF1801] hover:scale-[1.02] active:scale-95 group'
-                            }`}
-                          >
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-start">
+                          <div className="p-6 space-y-4">
+                            <div className="bg-[#111] border border-[#222] p-5 rounded-md space-y-4 relative overflow-hidden">
+                              <div className="flex justify-between items-start flex-wrap gap-3">
                                 <div>
-                                  <span className="text-[9px] text-[#666] font-mono block">
-                                    {cand.country || 'Paddock'}
+                                  <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/35 font-mono font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                                    CONTRATO OFICIAL ASSINADO (🔒 TRAVADO)
                                   </span>
-                                  <h6 className="font-display font-medium text-white text-sm tracking-tight leading-tight group-hover:text-[#FF1801] transition-colors">
-                                    {cand.name}
-                                  </h6>
+                                  <h5 className="text-lg font-display font-medium text-white tracking-tight pt-1.5 leading-none">
+                                    {filledCandidate.name}
+                                  </h5>
+                                  <p className="text-xs text-gray-450 mt-1.5 font-sans">
+                                    História: <span className="font-semibold text-gray-200">{filledCandidate.sourceTeam}</span> ({filledCandidate.sourceSeason})
+                                  </p>
                                 </div>
-
-                                {isRestricted ? (
-                                  <span className="bg-red-950/80 border border-red-800 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm flex items-center space-x-1">
-                                    <Lock className="h-2.5 w-2.5 inline text-[#FF1801]" />
-                                    <span>LICENÇA RESTRITA</span>
-                                  </span>
-                                ) : difficultyMode === 'normal' ? (
-                                  <span className="bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm">
-                                    RATING {cand.rating_geral}
-                                  </span>
-                                ) : (
-                                  <span className="bg-[#222] border border-[#333] text-gray-400 font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm">
-                                    CHASSI SEGREDO
-                                  </span>
-                                )}
+                                
+                                <div className="text-right">
+                                  <span className="text-[8px] text-[#666] font-mono uppercase block">Status de Força</span>
+                                  {difficultyMode === 'normal' ? (
+                                    <span className="text-xl font-mono font-black text-cyan-450">
+                                      RATING {filledCandidate.rating_geral}
+                                    </span>
+                                  ) : (
+                                    <span className="text-lg font-mono font-bold text-gray-400">
+                                      CHASSI SEGREDO
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
-                              <p className="text-xs text-[#888] leading-snug">
-                                {cand.description}
+                              <p className="text-xs text-gray-400 leading-relaxed bg-[#050505] p-3 border border-[#1a1a1a] rounded font-sans">
+                                {filledCandidate.description}
                               </p>
 
-                              {activatedCombos.length > 0 && (
-                                <div className="mt-2.5 space-y-1">
-                                  {activatedCombos.map((cb) => {
-                                    const isNegative = cb.bonusValue < 0;
-                                    return (
-                                      <div
-                                        key={cb.name}
-                                        className={`flex items-center space-x-1 px-1.5 py-0.5 rounded-sm text-[8px] font-mono font-bold border uppercase tracking-wider ${
-                                          isNegative
-                                            ? 'bg-red-950/25 text-[#FF1801] border-red-900/30'
-                                            : 'bg-green-950/30 text-green-400 border-green-900/30'
-                                        }`}
-                                      >
-                                        <span>{isNegative ? '⚠️ ALERTA:' : '✨ COMBO:'}</span>
-                                        <span className="truncate">{cb.name}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Detalhes de atributos base */}
-                            <div className="border-t border-[#1C1C1C] pt-3 mt-4 space-y-2 text-[10px] font-mono">
-                              {cand.entityType === 'driver' && (
-                                <div className="grid grid-cols-3 gap-1 text-center text-gray-400">
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">RITMO</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.pace : '???'}</span>
+                              {/* sub-grids de atributos */}
+                              {filledCandidate.entityType === 'driver' && (
+                                <div className="grid grid-cols-3 gap-2 text-center text-gray-400 font-mono text-[11px] pt-1">
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">RITMO</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.pace : '???'}</span>
                                   </div>
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">CONST</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.consistency : '???'}</span>
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">CONST</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.consistency : '???'}</span>
                                   </div>
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222] font-bold text-cyan-400">
-                                    <span className="block text-[8px] text-[#555] leading-none">CHUVA</span>
-                                    <span>{difficultyMode === 'normal' ? cand.chuva : '???'}</span>
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222] text-cyan-400">
+                                    <span className="block text-[8px] text-cyan-600 leading-none mb-1">CHUVA</span>
+                                    <span className="font-bold">{difficultyMode === 'normal' ? filledCandidate.chuva : '???'}</span>
                                   </div>
                                 </div>
                               )}
 
-                              {cand.entityType === 'boss' && (
-                                <div className="grid grid-cols-2 gap-1 text-center text-gray-400">
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">LIDERANÇA</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.leadership : '???'}</span>
+                              {filledCandidate.entityType === 'boss' && (
+                                <div className="grid grid-cols-2 gap-2 text-center text-gray-400 font-mono text-[11px] pt-1">
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">LIDERANÇA</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.leadership : '???'}</span>
                                   </div>
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">PRESTÍGIO</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.prestige : '???'}</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {cand.entityType === 'chassis' && (
-                                <div className="grid grid-cols-2 gap-1 text-center text-gray-400">
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">V_MÁXIMA</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.top_speed : '???'}</span>
-                                  </div>
-                                  <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
-                                    <span className="block text-[8px] text-[#666] leading-none">AERO</span>
-                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.aerodynamics : '???'}</span>
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">PRESTÍGIO</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.prestige : '???'}</span>
                                   </div>
                                 </div>
                               )}
 
-                              <div className="flex justify-end pt-1">
-                                <span className="text-[9px] text-[#FF1801] flex items-center space-x-1 font-bold group-hover:translate-x-1 transition-transform">
-                                  <span>CONTRATAR ELEMENTO</span>
-                                  <ChevronRight className="h-3 w-3" />
-                                </span>
+                              {filledCandidate.entityType === 'chassis' && (
+                                <div className="grid grid-cols-2 gap-2 text-center text-gray-400 font-mono text-[11px] pt-1">
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">V_MÁXIMA</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.top_speed : '???'}</span>
+                                  </div>
+                                  <div className="bg-[#050505] p-2 rounded border border-[#222]">
+                                    <span className="block text-[8px] text-[#555] leading-none mb-1">AERO</span>
+                                    <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? filledCandidate.aerodynamics : '???'}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="pt-2 text-[10px] text-gray-500 font-mono flex items-center space-x-1.5 justify-center bg-[#070707]/30 py-2 rounded">
+                                <Lock className="h-3 w-3 text-amber-500" />
+                                <span>Você pode checar os demais cockpit/slots no painel à esquerda.</span>
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                        </>
+                      );
+                    }
+
+                    return (
+                      <>
+                        {/* Descrição do pacote sorteado */}
+                        <div className="px-6 py-3 bg-[#FF1801]/5 border-b border-[#FF1801]/10 text-xs text-[#888] leading-relaxed italic">
+                          💡 O bólido e a engenharia apontaram para {activeCombo.teamName} na temporada histórica de {activeCombo.season}. Recrute as alternativas compatíveis abaixo para consolidar seu tempo de volta!
+                        </div>
+
+                        {/* Espaço de Candidatos Elegíveis */}
+                        <div className="p-6 space-y-4">
+                          <h5 className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Alternativas Oficiais de Contrato:</h5>
+                          
+                          {/* Filtro Restritivo de Contratos */}
+                          <div className="bg-[#111] border border-[#222] p-3 rounded flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                            <div>
+                              <span className="font-bold text-gray-300 block uppercase tracking-wider text-[9px] font-mono mb-0.5">
+                                🛡️ Restrição do Cockpit (Licença Paddock)
+                              </span>
+                              <p className="text-[10px] text-[#777] font-sans leading-tight">
+                                {restrictiveMode === 'none' && "Paddock Aberto: Todos os pilotos do sorteio estão elegíveis para contratação."}
+                                {restrictiveMode === 'elite' && "Super Licença Elite: Apenas pilotos com rating >= 83 ou títulos de renome podem assinar."}
+                                {restrictiveMode === 'no-meme' && "Foco Profissional: Pilotos meme ou amadores com rating < 60 estão suspensos."}
+                                {restrictiveMode === 'only-meme' && "Desafio Renegados: Apenas pilotos meme ou fundo de grid são elegíveis!"}
+                              </p>
+                            </div>
+                            <div className="flex items-center space-x-1 w-full sm:w-auto">
+                              <select
+                                id="select_restrictive_mode"
+                                value={restrictiveMode}
+                                onChange={(e) => {
+                                  setRestrictiveMode(e.target.value as any);
+                                  playBeep(600, 0.08);
+                                }}
+                                className="bg-[#050505]/80 border border-[#333] text-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#FF1801] text-xs font-mono w-full sm:w-auto cursor-pointer"
+                              >
+                                <option value="none">🔓 Paddock Aberto (Todos)</option>
+                                <option value="elite">👑 Super Licença Elite (GOATs)</option>
+                                <option value="no-meme">🛡️ Sem Pilotos Meme (Rating &gt;= 60)</option>
+                                <option value="only-meme">🤡 Apenas Pilotos Meme (Rating &lt; 80)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {candidates.map((cand) => {
+                              const slotId = GAME_SLOTS[activeSlotIndex]?.id;
+                              const currentComboNames = detectCombos(slots).map(c => c.name);
+                              const simulatedCombos = slotId ? detectCombos({ ...slots, [slotId]: cand }) : [];
+                              const activatedCombos = simulatedCombos.filter(c => !currentComboNames.includes(c.name));
+                              const isRestricted = isCandidateRestricted(cand);
+
+                              return (
+                                <div
+                                  key={cand.id || cand.name}
+                                  id={`candidate_card_${cand.id || cand.name}`}
+                                  onClick={() => handleSelectCandidate(cand)}
+                                  className={`bg-[#050505] border hover:bg-[#111]/30 rounded p-4 cursor-pointer transition-all text-left flex flex-col justify-between ${
+                                    isRestricted
+                                      ? 'opacity-30 border-red-950/45 bg-red-950/5 cursor-not-allowed hover:border-red-950'
+                                      : 'border-[#222] hover:border-[#FF1801] hover:scale-[1.02] active:scale-95 group'
+                                  }`}
+                                >
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <span className="text-[9px] text-[#666] font-mono block">
+                                          {cand.country || 'Paddock'}
+                                        </span>
+                                        <h6 className="font-display font-medium text-white text-sm tracking-tight leading-tight group-hover:text-[#FF1801] transition-colors">
+                                          {cand.name}
+                                        </h6>
+                                      </div>
+
+                                      {isRestricted ? (
+                                        <span className="bg-red-950/80 border border-red-800 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm flex items-center space-x-1">
+                                          <Lock className="h-2.5 w-2.5 inline text-[#FF1801]" />
+                                          <span>LICENÇA RESTRITA</span>
+                                        </span>
+                                      ) : difficultyMode === 'normal' ? (
+                                        <span className="bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm">
+                                          RATING {cand.rating_geral}
+                                        </span>
+                                      ) : (
+                                        <span className="bg-[#222] border border-[#333] text-gray-400 font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm">
+                                          CHASSI SEGREDO
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <p className="text-xs text-[#888] leading-snug font-sans">
+                                      {cand.description}
+                                    </p>
+
+                                    {activatedCombos.length > 0 && (
+                                      <div className="mt-2.5 space-y-1">
+                                        {activatedCombos.map((cb) => {
+                                          const isNegative = cb.bonusValue < 0;
+                                          return (
+                                            <div
+                                              key={cb.name}
+                                              className={`flex items-center space-x-1 px-1.5 py-0.5 rounded-sm text-[8px] font-mono font-bold border uppercase tracking-wider ${
+                                                isNegative
+                                                  ? 'bg-red-950/25 text-[#FF1801] border-red-900/30'
+                                                  : 'bg-green-950/30 text-green-400 border-green-900/30'
+                                              }`}
+                                            >
+                                              <span>{isNegative ? '⚠️ ALERTA:' : '✨ COMBO:'}</span>
+                                              <span className="truncate">{cb.name}</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Detalhes de atributos base */}
+                                  <div className="border-t border-[#1C1C1C] pt-3 mt-4 space-y-2 text-[10px] font-mono">
+                                    {cand.entityType === 'driver' && (
+                                      <div className="grid grid-cols-3 gap-1 text-center text-gray-400">
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">RITMO</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.pace : '???'}</span>
+                                        </div>
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">CONST</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.consistency : '???'}</span>
+                                        </div>
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222] font-bold text-cyan-400">
+                                          <span className="block text-[8px] text-[#555] leading-none">CHUVA</span>
+                                          <span>{difficultyMode === 'normal' ? cand.chuva : '???'}</span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {cand.entityType === 'boss' && (
+                                      <div className="grid grid-cols-2 gap-1 text-center text-gray-400">
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">LIDERANÇA</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.leadership : '???'}</span>
+                                        </div>
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">PRESTÍGIO</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.prestige : '???'}</span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {cand.entityType === 'chassis' && (
+                                      <div className="grid grid-cols-2 gap-1 text-center text-gray-400">
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">V_MÁXIMA</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.top_speed : '???'}</span>
+                                        </div>
+                                        <div className="bg-[#111] p-1 rounded-sm border border-[#222]">
+                                          <span className="block text-[8px] text-[#666] leading-none">AERO</span>
+                                          <span className="font-bold text-[#E0E0E0]">{difficultyMode === 'normal' ? cand.aerodynamics : '???'}</span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="flex justify-end pt-1">
+                                      <span className="text-[9px] text-[#FF1801] flex items-center space-x-1 font-bold group-hover:translate-x-1 transition-transform">
+                                        <span>CONTRATAR ELEMENTO</span>
+                                        <ChevronRight className="h-3 w-3" />
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                 </div>
               ) : (
@@ -6661,7 +6801,17 @@ Jogue agora em: ${window.location.href}`;
               </div>
 
               <div className="space-y-2">
-                <span className="font-bold text-white block uppercase">🏁 A SIMULAÇÃO DA CORRIDA:</span>
+                <span className="font-bold text-white block uppercase">🎯 CONTRATOS OFICIAIS (SEM TROCAS) & DUPLICIDADE:</span>
+                <p>
+                  Para garantir a imersão e o realismo desta gestão de escuderia, <strong>uma vez que você escolhe e fecha o contrato de um profissional ou componente técnico em uma vaga, a escolha é travada</strong>. Você pode selecionar e clicar no slot para revisitar os atributos se quiser, mas não poderá trocá-lo ou substituí-lo.
+                </p>
+                <p className="text-amber-400 font-mono text-[10px] leading-snug">
+                  ⚠️ Regulamento do Pit-Lane: A mesma pessoa física de piloto não pode ser contratada para mais de uma vaga (ex: impossível duplicar o piloto no cockpit 1 e no cockpit 2 ou reserva).
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <span className="font-bold text-[#FF1801] block uppercase font-mono">🏁 A SIMULAÇÃO DA CORRIDA:</span>
                 <p>
                   Os desfechos das 24 corridas do ano não são fakes. Uma sólida engine lógica roda levando em consideração o Ritmo (Pace) do piloto sorteado, Confiabilidade mecânica do carro de base, força de Engenharia e Estratégia de Box contra o clima instável dos circuitos. Batidas e quebras (DNFs) ocorrem caso monte uma equipe instável ou agressiva demais!
                 </p>
