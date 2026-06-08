@@ -217,6 +217,70 @@ export const CIRCUITS: Race[] = [
     isWet: false,
     description: 'Yas Marina. Luxuosa corrida crepuscular, término sob refletores com foco em aceleração e tração.',
   },
+  {
+    name: 'Grande Prêmio do Bahrein',
+    country: 'Bahrein 🇧🇭',
+    flag: 'BH',
+    type: 'veloz',
+    isWet: false,
+    description: 'Sakhir. Circuito maravilhoso no deserto com frenagens agressivas e foco absoluto na tração.',
+  },
+  {
+    name: 'Grande Prêmio da Arábia Saudita',
+    country: 'Arábia Saudita 🇸🇦',
+    flag: 'SA',
+    type: 'rua',
+    isWet: false,
+    description: 'Jeddah Corniche. O circuito de rua mais rápido do mundo, ladeado por muros colados e curvas cegas extremas.',
+  },
+  {
+    name: 'Grande Prêmio de Miami',
+    country: 'Estados Unidos 🇺🇸',
+    flag: 'US',
+    type: 'rua',
+    isWet: false,
+    description: 'Autódromo Internacional de Miami. Pista rítmica ao redor do Hard Rock Stadium com setor apertado e chicanes técnicas.',
+  },
+  {
+    name: 'Grande Prêmio da China',
+    country: 'China 🇨🇳',
+    flag: 'CN',
+    type: 'técnico',
+    isWet: true,
+    description: 'Xangai. Curva icônica em caracol de abertura, retas inacreditáveis e exigência total nos pneus dianteiros.',
+  },
+  {
+    name: 'Grande Prêmio da Emilia-Romagna',
+    country: 'Itália 🇮🇹',
+    flag: 'IT',
+    type: 'clássico',
+    isWet: true,
+    description: 'Imola. O histórico circuito Enzo e Dino Ferrari, com ondulações e as curvas lendárias de Tamburello e Acque Minerali.',
+  },
+  {
+    name: 'Grande Prêmio de Las Vegas',
+    country: 'Estados Unidos 🇺🇸',
+    flag: 'US',
+    type: 'rua',
+    isWet: false,
+    description: 'Las Vegas Strip. Corrida noturna congelante e ultra-rápida passando pelas fontes do Bellagio e da Esfera.',
+  },
+  {
+    name: 'Grande Prêmio do Catar',
+    country: 'Catar 🇶🇦',
+    flag: 'QA',
+    type: 'veloz',
+    isWet: false,
+    description: 'Losail. Pista plana de ritmo fluido, repleta de curvas de altíssima velocidade constante que moem os pneus.',
+  },
+  {
+    name: 'Grande Prêmio do México',
+    country: 'México 🇲🇽',
+    flag: 'MX',
+    type: 'técnico',
+    isWet: false,
+    description: 'Autódromo Hermanos Rodríguez. Pista a mais de 2.200 metros de altitude onde o ar rarefeito anula a pressão aerodinâmica.',
+  },
 ];
 
 export const SEASONS_TEAMS: TeamCombination[] = [
@@ -1735,6 +1799,52 @@ export function detectCombos(filledSlots: Record<string, any>): { name: string; 
       description: 'O temível combo de pneus duros em dia de tempestade na Hungria. Deus nos ajude (-10 Estratégia).',
       bonusValue: -12,
       icon: 'alert-triangle'
+    });
+  }
+
+  // Senna & Prost Cockpit War
+  const hasProst = drivers.some(d => d.name.includes('Prost'));
+  if (hasSenna && hasProst) {
+    combos.push({
+      name: 'Senna & Prost - Guerra de Box 🚨',
+      description: 'Extrema rivalidade mútua. A obsessão de derrotar o companheiro eleva o ritmo de classificação ao limite (+12 Pace), mas racha o box e derruba a confiabilidade do carro (-15 Confiabilidade) com stress severo.',
+      bonusValue: 6,
+      icon: 'shield-alert'
+    });
+  }
+
+  // Alonso & Hamilton Cockpit Clash
+  const hasAlonso = drivers.some(d => d.name.includes('Alonso'));
+  if (hasAlonso && hasHamilton) {
+    combos.push({
+      name: 'Alonso & Hamilton - Fogo Cruzado 💥',
+      description: 'A rivalidade estrondosa da McLaren 2007 ganha nova vida! Ambos empurram um ao outro a patamares fenomenais (+8 Pace), mas a guerra psicológica detona a confiabilidade (-10 Confiabilidade).',
+      bonusValue: 4,
+      icon: 'zap'
+    });
+  }
+
+  // Vettel + Red Bull Legacy
+  const hasVettel = drivers.some(d => d.name.includes('Vettel'));
+  const hasRedBullChassis = chassis && chassis.name.includes('Red Bull');
+  if (hasVettel && hasRedBullChassis) {
+    combos.push({
+      name: 'Touro de Ouro: Vettel & Red Bull 🐂',
+      description: 'O tetracampeonato consecutivo ressurge em Milton Keynes. Sintonização perfeita em curvas rápidas (+8 Ritmo, +4 Direção térmica).',
+      bonusValue: 10,
+      icon: 'sparkle'
+    });
+  }
+
+  // Jordan -> Aston Martin lineage
+  const hasEddieJordan = boss && boss.name.includes('Eddie Jordan');
+  const hasAstonChassis = chassis && chassis.name.includes('Aston Martin');
+  if (hasEddieJordan && hasAstonChassis) {
+    combos.push({
+      name: 'DNA Jordan -> Aston Martin 🏎️',
+      description: 'O carismático Eddie Jordan retorna ao comando de sua antiga equipe de Silverstone (Jordan GP), hoje rebatizada de Aston Martin. Nostalgia histórica de ouro (+6 Consistência).',
+      bonusValue: 7,
+      icon: 'landmark'
     });
   }
 

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "adrian_newey",
+    "name": "Adrian Newey",
+    "role": ["aerodynamicist", "technical_director"],
+    "eraStart": 1980,
+    "eraEnd": null,
+    "titlesDriversApprox": 10,
+    "titlesConstructorsApprox": 10,
+    "teams": ["March", "Williams", "McLaren", "Red Bull", "Aston Martin"],
+    "tier": "legend",
+    "reputationTags": ["aero_genius", "multi_team_champion"],
+    "memeTags": [],
+    "notes": "Projetista de carros campeões em múltiplas equipes; amplamente citado como um dos maiores engenheiros da F1."
+  },
+  {
+    "id": "james_allison",
+    "name": "James Allison",
+    "role": ["technical_director"],
+    "eraStart": 1990,
+    "eraEnd": null,
+    "titlesDriversApprox": 5,
+    "titlesConstructorsApprox": 5,
+    "teams": ["Ferrari", "Mercedes"],
+    "tier": "strong",
+    "reputationTags": ["chassis", "hybrid_era_success"],
+    "memeTags": [],
+    "notes": "Engenheiro ligado a diversos títulos nas eras Ferrari e Mercedes, frequentemente citado entre os mais bem-sucedidos da era moderna."
+  },
+  {
+    "id": "mike_gascoyne",
+    "name": "Mike Gascoyne",
+    "role": ["chief_designer", "technical_director"],
+    "eraStart": 1989,
+    "eraEnd": 2012,
+    "titlesDriversApprox": 0,
+    "titlesConstructorsApprox": 0,
+    "teams": ["Jordan", "Renault", "Toyota", "Lotus Racing"],
+    "tier": "strong",
+    "reputationTags": ["resourceful_designer", "underdog_builder"],
+    "memeTags": [],
+    "notes": "Especialista renomado em estruturar e elevar equipes de médio orçamento a patamares competitivos na mureta e design de chassi."
+  },
+  {
+    "id": "nick_wirth",
+    "name": "Nick Wirth",
+    "role": ["technical_director"],
+    "eraStart": 1994,
+    "eraEnd": 2011,
+    "titlesDriversApprox": 0,
+    "titlesConstructorsApprox": 0,
+    "teams": ["Simtek", "Benetton", "Virgin Racing"],
+    "tier": "meme",
+    "reputationTags": ["cfd_only", "over_ambitious"],
+    "memeTags": ["spec_sheet_vs_reality"],
+    "notes": "Pioneiro audacioso que projetou o carro da Virgin sem usar túnel de vento (puramente CFD), famosamente resultando em um tanque de combustível menor do que o necessário."
+  }
+]

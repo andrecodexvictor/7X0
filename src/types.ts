@@ -124,6 +124,7 @@ export interface SimulationRaceResult {
     dnf: boolean;
     incident?: string;
     trackEffect?: string;
+    stress?: number;
   }[];
 }
 

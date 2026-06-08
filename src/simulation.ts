@@ -207,12 +207,26 @@ export function runChampionshipSimulation(
   let championStoryTriggered = false;
   const narrationHighlights: string[] = [];
 
+  // Teammate and Stress tracking maps
+  const teammateOf: Record<string, string> = {};
+  const driverStress: Record<string, number> = {};
+
   // Standings tracker
   const standingsPoints: Record<string, number> = {};
   const standingsWins: Record<string, number> = {};
   const standingsPodiums: Record<string, number> = {};
   const standsDnfCount: Record<string, number> = {};
   const teamPoints: Record<string, number> = {};
+
+  // Pre-seed rival teammate links
+  for (let i = 0; i < RIVAL_DRIVERS.length; i += 2) {
+    const drv1 = RIVAL_DRIVERS[i];
+    const drv2 = RIVAL_DRIVERS[i+1];
+    if (drv1 && drv2) {
+      teammateOf[`${drv1.name} (${drv1.team})`] = `${drv2.name} (${drv2.team})`;
+      teammateOf[`${drv2.name} (${drv2.team})`] = `${drv1.name} (${drv1.team})`;
+    }
+  }
 
   finalPlayers.forEach(player => {
     const pSlots = player.slots;
@@ -226,6 +240,49 @@ export function runChampionshipSimulation(
     const chassis = pSlots['chassis'];
     const strategist = pSlots['strategist'];
     const engineer = pSlots['engineer'];
+
+    // Map teammate relationship
+    const d1Name = d1?.name || `${player.name} Piloto 1`;
+    const d2Name = d2?.name || `${player.name} Piloto 2`;
+    const d1Key = `${d1Name} (${player.teamName})`;
+    const d2Key = `${d2Name} (${player.teamName})`;
+    teammateOf[d1Key] = d2Key;
+    teammateOf[d2Key] = d1Key;
+
+    // Detect elite psychological sibling conflicts (Racha no Elenco)
+    const isSennaProst = (d1Name.includes('Senna') && d2Name.includes('Prost')) || (d1Name.includes('Prost') && d2Name.includes('Senna'));
+    const isHamiltonAlonso = (d1Name.includes('Hamilton') && d2Name.includes('Alonso')) || (d1Name.includes('Alonso') && d2Name.includes('Hamilton'));
+    const isVettelWebber = (d1Name.includes('Vettel') && d2Name.includes('Webber')) || (d1Name.includes('Webber') && d2Name.includes('Vettel'));
+    const bothAggressive = d1 && d2 && d1.aggressiveness >= 90 && d2.aggressiveness >= 90;
+
+    let rivalryPaceBonus = 0;
+    let rivalryReliabilityDebuff = 0;
+
+    if (isSennaProst) {
+      rivalryPaceBonus = 10; // Extreme speed due to obsession
+      rivalryReliabilityDebuff = -18; // Frequent mutual crash hazard
+      driverStress[d1Key] = 55;
+      driverStress[d2Key] = 55;
+      narrationHighlights.push(`🚨 CRÍTICO: Senna e Prost no mesmo box! Ativou [RACHA NO ELENCO] - Ganham +10 de Ritmo Absoluto, mas a Confiabilidade despencou e o estresse inicial é crítico (55%).`);
+    } else if (isHamiltonAlonso) {
+      rivalryPaceBonus = 7;
+      rivalryReliabilityDebuff = -12;
+      driverStress[d1Key] = 45;
+      driverStress[d2Key] = 45;
+      narrationHighlights.push(`🚨 CONFLITO: Alonso e Hamilton reatam a guerra fria de 2007! Ativou [RIVALIDADE DE EGOS] - +7 de Pace, porém Confiabilidade cedeu e o stress inicial subiu para 45%.`);
+    } else if (isVettelWebber) {
+      rivalryPaceBonus = 5;
+      rivalryReliabilityDebuff = -8;
+      driverStress[d1Key] = 35;
+      driverStress[d2Key] = 35;
+      narrationHighlights.push(`⚠️ DISPUTA: Vettel e Webber reacendem o racha interno Multi-21. Rivalidade silenciosa: +5 Pace, -8 Confiabilidade.`);
+    } else if (bothAggressive) {
+      rivalryPaceBonus = 3;
+      rivalryReliabilityDebuff = -6;
+      driverStress[d1Key] = 25;
+      driverStress[d2Key] = 25;
+      narrationHighlights.push(`⚠️ ALTA TENSÃO: Dois pilotos extremamente agressivos no cockpit. Clima polvilhado nas reuniões: +3 Pace, -6 Confiabilidade.`);
+    }
 
     // Check which combos are active
     const combos = detectCombos(pSlots);
@@ -243,15 +300,15 @@ export function runChampionshipSimulation(
 
     // Strategy efficiency
     const stratFactor = (strategistRating + bossRating) / 2; // base 50-100
-    // Reliability score
-    const reliabilityScore = ((chassis?.reliability || 85) + (engineerRating) + (boss?.pressure_handling || 85)) / 3 + totalComboBonus / 2;
+    // Reliability score (impacted heavily by active crew/driver rivalries)
+    const reliabilityScore = ((chassis?.reliability || 85) + (engineerRating) + (boss?.pressure_handling || 85)) / 3 + totalComboBonus / 2 + rivalryReliabilityDebuff;
 
     // Build User Driver 1 Entry
     const userDriver1: DriverEntry = {
-      name: d1?.name || `${player.name} Piloto 1`,
+      name: d1Name,
       team: player.teamName,
       color: player.color,
-      pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus,
+      pace: (d1?.pace || 85) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + rivalryPaceBonus,
       consistency: (d1?.consistency || 85) + (bossRating * 0.08) + totalComboBonus / 4,
       chuva: (d1?.chuva || 85) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4,
       aggressiveness: d1?.aggressiveness || 85,
@@ -264,10 +321,10 @@ export function runChampionshipSimulation(
 
     // Build User Driver 2 Entry
     const userDriver2: DriverEntry = {
-      name: d2?.name || `${player.name} Piloto 2`,
+      name: d2Name,
       team: player.teamName,
       color: player.color,
-      pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus,
+      pace: (d2?.pace || 83) + (chassisRating * 0.15) + (engineerRating * 0.1) + totalComboBonus / 3 + supportBonus + legacyBonus + rivalryPaceBonus,
       consistency: (d2?.consistency || 82) + (bossRating * 0.08) + totalComboBonus / 4,
       chuva: (d2?.chuva || 83) + ((wetSpecialist?.chuva || 85) * 0.05) + totalComboBonus / 4,
       aggressiveness: d2?.aggressiveness || 85,
@@ -285,11 +342,23 @@ export function runChampionshipSimulation(
   const gridDrivers: DriverEntry[] = [...RIVAL_DRIVERS, ...userDrivers];
 
   gridDrivers.forEach(d => {
-    standingsPoints[d.name] = 0;
-    standingsWins[d.name] = 0;
-    standingsPodiums[d.name] = 0;
-    standsDnfCount[d.name] = 0;
+    const dKey = `${d.name} (${d.team})`;
+    standingsPoints[dKey] = 0;
+    standingsWins[dKey] = 0;
+    standingsPodiums[dKey] = 0;
+    standsDnfCount[dKey] = 0;
     teamPoints[d.team] = 0;
+    
+    // Initialize stress for drivers if not set by rivalry pre-seeding
+    if (driverStress[dKey] === undefined) {
+      if (d.name === 'Ayrton Senna' || d.name === 'Alain Prost') {
+        driverStress[dKey] = 50; // High default CPU rivalry intensity
+      } else if (d.name === 'Sebastian Vettel' || d.name === 'Mark Webber') {
+        driverStress[dKey] = 35;
+      } else {
+        driverStress[dKey] = 10; // normal calm flow
+      }
+    }
   });
 
   const raceResults: SimulationRaceResult[] = [];
@@ -302,13 +371,28 @@ export function runChampionshipSimulation(
     const driverRaceScores: { driver: DriverEntry; score: number; dnf: boolean; dnfReason?: string; trackEffect?: string }[] = [];
 
     gridDrivers.forEach(drv => {
-      // Base performance formula
+      const dKey = `${drv.name} (${drv.team})`;
+      // Fetch dynamic driver stress level (Ranges from 5% to 100%)
+      const currentStress = driverStress[dKey] || 10;
+
+      // STRESS IMPACT FORMULAS:
+      // High stress reduces consistency (loss of focus) and pace (nervous driving)
+      const stressConsistencyPenalty = Math.max(0, (currentStress - 15) * 0.25);
+      const stressPacePenalty = currentStress > 80 ? 4.5 : (currentStress > 60 ? 2.0 : 0);
+      
+      // Flow state: very calm drivers get a stability boost!
+      const flowStateBonus = currentStress < 15 ? 2.5 : 0;
+
+      const adjustedPace = drv.pace - stressPacePenalty + flowStateBonus;
+      const adjustedConsistency = Math.max(30, drv.consistency - stressConsistencyPenalty + (currentStress < 15 ? 3.0 : 0));
+
+      // Base performance formula using adjusted values
       let baseGridScore = 0;
 
       // Track style multiplier
       if (race.type === 'veloz') {
         const topSpeedFactor = drv.isUser ? (drv.slots?.['chassis']?.top_speed || 85) : 95;
-        baseGridScore += drv.pace * 0.5 + topSpeedFactor * 0.5;
+        baseGridScore += adjustedPace * 0.5 + topSpeedFactor * 0.5;
       } else if (race.type === 'rua' || race.type === 'técnico') {
         const pSlots = drv.slots;
         const chassisAero = pSlots?.['chassis']?.aerodynamics || 85;
@@ -316,9 +400,9 @@ export function runChampionshipSimulation(
         const pStrategistRating = pSlots?.['strategist']?.rating_geral || 85;
         const pStratFactor = (pStrategistRating + pBossRating) / 2;
         const aeroFactor = drv.isUser ? (chassisAero * 0.4 + pStratFactor * 0.3) : 94;
-        baseGridScore += drv.pace * 0.5 + drv.consistency * 0.3 + aeroFactor * 0.2;
+        baseGridScore += adjustedPace * 0.5 + adjustedConsistency * 0.3 + aeroFactor * 0.2;
       } else {
-        baseGridScore += drv.pace * 0.6 + drv.consistency * 0.4;
+        baseGridScore += adjustedPace * 0.6 + adjustedConsistency * 0.4;
       }
 
       // Wet weather check
@@ -326,7 +410,7 @@ export function runChampionshipSimulation(
         const pSlots = drv.slots;
         const wetSpecialistChuva = pSlots?.['wet_specialist']?.chuva || 80;
         const wetAdvantage = drv.isUser ? (drv.chuva * 0.7 + wetSpecialistChuva * 0.3) : drv.chuva;
-        baseGridScore = (wetAdvantage * 0.8) + (drv.pace * 0.2) + 12;
+        baseGridScore = (wetAdvantage * 0.8) + (adjustedPace * 0.2) + 12;
 
         if (drv.isUser && pSlots?.['wet_specialist']) {
           const wetSpecialist = pSlots['wet_specialist'];
@@ -356,23 +440,23 @@ export function runChampionshipSimulation(
       }
 
       if (race.type === 'veloz') {
-        if (drv.pace >= 97) {
+        if (adjustedPace >= 97) {
           trackModifier += 4;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⚡ Ritmo de Reta (+4)` : '⚡ Ritmo de Reta (+4)';
-        } else if (drv.pace < 85) {
+        } else if (adjustedPace < 85) {
           trackModifier -= 4;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🐢 Baixa Potência (-4)` : '🐢 Baixa Potência (-4)';
         }
       } else if (race.type === 'rua') {
-        if (drv.consistency >= 94) {
+        if (adjustedConsistency >= 94) {
           trackModifier += 4;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🛡️ Precisão Urbana (+4)` : '🛡️ Precisão Urbana (+4)';
-        } else if (drv.consistency < 84) {
+        } else if (adjustedConsistency < 84) {
           trackModifier -= 4;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 💥 Risco de Muro (-4)` : '💥 Risco de Muro (-4)';
         }
       } else if (race.type === 'técnico') {
-        if (drv.consistency >= 95) {
+        if (adjustedConsistency >= 95) {
           trackModifier += 3;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 📐 Curvatura Técnica (+3)` : '📐 Curvatura Técnica (+3)';
         }
@@ -381,7 +465,7 @@ export function runChampionshipSimulation(
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | ⛔ Desgaste de Pneus (-3)` : '⛔ Desgaste de Pneus (-3)';
         }
       } else if (race.type === 'clássico') {
-        if (drv.consistency >= 92 && drv.reliability >= 92) {
+        if (adjustedConsistency >= 92 && drv.reliability >= 92) {
           trackModifier += 3;
           trackEffectDesc = trackEffectDesc ? `${trackEffectDesc} | 🏆 Fluxo Histórico (+3)` : '🏆 Fluxo Histórico (+3)';
         }
@@ -410,24 +494,27 @@ export function runChampionshipSimulation(
 
       // 2. Low-Rating Driver Chaos (Frustration-generating bad drivers)
       // If driver ratings or stats are low, they are far more error-prone!
-      const minPaceOrConsistency = Math.min(drv.pace, drv.consistency);
+      const minPaceOrConsistency = Math.min(adjustedPace, adjustedConsistency);
       const isLowRating = minPaceOrConsistency < 60;
       const lowRatingPenalty = isLowRating ? (15 + (60 - minPaceOrConsistency) * 0.6) : 0;
 
       // 3. Wet track & High Aggressiveness penalty
       const wetTrackAggressivenessPenalty = (race.isWet && drv.aggressiveness >= 90) ? 8.0 : 0;
 
-      // 4. Random race-specific weather/incident risk spike (e.g. Monza, Monaco, Spa)
+      // 4. Random race-specific weather/incident risk risk spike (e.g. Monza, Monaco, Spa)
       const raceIncidentRisk = ((raceIdx * 7) % 10) < 3 ? 5.5 : 0;
 
-      // 5. Difficulty mode multiplier for player drivers to generate challenge
+      // 5. Driver Stress penalty: High stress drastically spikes cockpit errors!
+      const stressDnfPenalty = Math.max(0, (currentStress - 20) * 0.18);
+
+      // 6. Difficulty mode multiplier for player drivers to generate challenge
       const userMultiplier = drv.isUser ? (difficultyMode === 'hard' ? 1.6 : (difficultyMode === 'underdog' ? 1.3 : 1.0)) : 1.0;
 
-      const totalDnfChance = (baseReliabilityChance + baseAggressivenessChance + roundFatiguePenalty + lowRatingPenalty + wetTrackAggressivenessPenalty + raceIncidentRisk) * userMultiplier;
+      const totalDnfChance = (baseReliabilityChance + baseAggressivenessChance + roundFatiguePenalty + lowRatingPenalty + wetTrackAggressivenessPenalty + raceIncidentRisk + stressDnfPenalty) * userMultiplier;
 
       if (dnfRoll < totalDnfChance) {
         isDnf = true;
-        standsDnfCount[drv.name] += 1;
+        standsDnfCount[dKey] += 1;
         
         // Expanded pool of highly frustrating and humorous reasons:
         const reasons = [
@@ -458,26 +545,32 @@ export function runChampionshipSimulation(
       });
     });
 
-    // Sort this race results from highest score to lowest
-    driverRaceScores.sort((a, b) => b.score - a.score);
+    // Sort this race results from highest score to lowest, moving DNFs to the end
+    driverRaceScores.sort((a, b) => {
+      if (a.dnf && !b.dnf) return 1;
+      if (!a.dnf && b.dnf) return -1;
+      return b.score - a.score;
+    });
 
     // Prepare Podium list & detailed positions
     const podium: { driver: string; team: string; color: string }[] = [];
-    const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string; trackEffect?: string }[] = [];
+    const positions: { driver: string; team: string; points: number; color: string; dnf: boolean; incident?: string; trackEffect?: string; stress?: number }[] = [];
 
     driverRaceScores.forEach((item, posIdx) => {
       const isDnf = item.dnf;
-      // Assign points
+      // Assign points: since DNFs are at the end, posIdx < 10 represents the top 10 finishers
       const pointsEarned = (!isDnf && posIdx < 10) ? f1Points[posIdx] : 0;
 
-      standingsPoints[item.driver.name] += pointsEarned;
+      const dKey = `${item.driver.name} (${item.driver.team})`;
+
+      standingsPoints[dKey] += pointsEarned;
       teamPoints[item.driver.team] += pointsEarned;
 
       if (!isDnf && posIdx === 0) {
-        standingsWins[item.driver.name] += 1;
+        standingsWins[dKey] += 1;
       }
       if (!isDnf && posIdx < 3) {
-        standingsPodiums[item.driver.name] += 1;
+        standingsPodiums[dKey] += 1;
       }
 
       // Add to race results arrays
@@ -496,8 +589,108 @@ export function runChampionshipSimulation(
         color: item.driver.color,
         dnf: isDnf,
         incident: isDnf ? item.dnfReason : undefined,
-        trackEffect: item.trackEffect
+        trackEffect: item.trackEffect,
+        stress: Math.round(driverStress[dKey] || 10)
       });
+    });
+
+    // --- GAMEPLAY STRESS PROGRESSIVE UPDATER ---
+    // Build swift record tables for this race
+    const racePositionsMap: Record<string, number> = {};
+    const raceDnfMap: Record<string, boolean> = {};
+    driverRaceScores.forEach((item, idx) => {
+      const dKey = `${item.driver.name} (${item.driver.team})`;
+      racePositionsMap[dKey] = idx;
+      raceDnfMap[dKey] = item.dnf;
+    });
+
+    gridDrivers.forEach(drv => {
+      let stressChange = 0;
+      const dKey = `${drv.name} (${drv.team})`;
+      const isDnf = raceDnfMap[dKey];
+      const position = racePositionsMap[dKey];
+
+      if (isDnf) {
+        stressChange += 22; // High pressure after on-track failure
+      } else {
+        if (position === 0) {
+          stressChange -= 22; // Victory brings supreme calm
+        } else if (position < 3) {
+          stressChange -= 14; // Podium cools cockpit stress
+        } else if (position < 10) {
+          stressChange -= 7; // Points secure confidence
+        } else {
+          stressChange += 10; // Finishing P11+ frustrates and stresses
+        }
+      }
+
+      // Track elements
+      if (race.isWet) stressChange += 5;
+      if (race.type === 'rua') stressChange += 4;
+
+      // Head-to-Head teammate psych war
+      const tmKey = teammateOf[dKey];
+      if (tmKey) {
+        const tmPos = racePositionsMap[tmKey];
+        const tmDnf = raceDnfMap[tmKey];
+
+        if (!isDnf && !tmDnf) {
+          if (position > tmPos) {
+            stressChange += 9; // Losing to your teammate increases pressure & rivalry stress
+          } else {
+            stressChange -= 5; // Beating teammate lowers stress
+          }
+        }
+        if (tmDnf && !isDnf) {
+          stressChange += 4; // Extra focus stress as sole point earner
+        }
+      }
+
+      // Continuous team friction (Racha no elenco drift)
+      if (drv.isUser && drv.slots) {
+        const pSlots = drv.slots;
+        const d1 = pSlots['driver_1'];
+        const d2 = pSlots['driver_2'];
+        if (d1 && d2) {
+          const d1Name = d1.name;
+          const d2Name = d2.name;
+          const isSennaProst = (d1Name.includes('Senna') && d2Name.includes('Prost')) || (d1Name.includes('Prost') && d2Name.includes('Senna'));
+          const isHamiltonAlonso = (d1Name.includes('Hamilton') && d2Name.includes('Alonso')) || (d1Name.includes('Alonso') && d2Name.includes('Hamilton'));
+          const isVettelWebber = (d1Name.includes('Vettel') && d2Name.includes('Webber')) || (d1Name.includes('Webber') && d2Name.includes('Vettel'));
+          const bothAggressive = d1.aggressiveness >= 90 && d2.aggressiveness >= 90;
+
+          if (isSennaProst) stressChange += 11;
+          else if (isHamiltonAlonso) stressChange += 8;
+          else if (isVettelWebber) stressChange += 6;
+          else if (bothAggressive) stressChange += 4;
+        }
+      } else {
+        if (drv.name === 'Ayrton Senna' || drv.name === 'Alain Prost') {
+          stressChange += 11;
+        } else if (drv.name === 'Sebastian Vettel' || drv.name === 'Mark Webber') {
+          stressChange += 6;
+        }
+      }
+
+      // Mitigating manager effect
+      if (drv.isUser && drv.slots) {
+        const boss = drv.slots['team_boss'];
+        if (boss) {
+          const bossRating = boss.rating_geral || 85;
+          const coolDown = Math.floor((bossRating - 50) * 0.08); // high stats boss pacifies the arena
+          stressChange -= coolDown;
+        }
+      }
+
+      const prevStress = driverStress[dKey] || 10;
+      let newStress = prevStress + stressChange;
+      newStress = Math.max(5, Math.min(100, newStress));
+      driverStress[dKey] = newStress;
+
+      // In-paddock friction narration alert
+      if (drv.isUser && newStress > 85 && prevStress <= 85) {
+        narrationHighlights.push(`🔥 ALARM DE BOX: O estresse de ${drv.name} da equipe ${drv.team} explodiu para ${Math.round(newStress)}%! A rivalidade acirrada no elenco ameaça dividir o box e sabotar os resultados do time.`);
+      }
     });
 
     // Store GP result
@@ -544,15 +737,16 @@ export function runChampionshipSimulation(
 
   // 4. Format final Standings
   const finalDriverStandings = gridDrivers.map(drv => {
+    const dKey = `${drv.name} (${drv.team})`;
     return {
       driver: drv.name,
       team: drv.team,
-      points: standingsPoints[drv.name],
+      points: standingsPoints[dKey],
       isUser: drv.isUser,
       color: drv.color,
-      wins: standingsWins[drv.name],
-      podiums: standingsPodiums[drv.name],
-      dnfCount: standsDnfCount[drv.name],
+      wins: standingsWins[dKey],
+      podiums: standingsPodiums[dKey],
+      dnfCount: standsDnfCount[dKey],
       playerId: drv.playerId
     };
   }).sort((a, b) => b.points - a.points);

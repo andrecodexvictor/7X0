@@ -8,6 +8,7 @@ import {
   User,
   Users,
   UserCheck,
+  Frown,
   Shield,
   History,
   CloudRain,
@@ -44,6 +45,9 @@ import {
   Sparkle
 } from 'lucide-react';
 import { GAME_SLOTS, CIRCUITS, SEASONS_TEAMS, getRandomComboExcept, evaluateQualityRank, detectCombos } from './data';
+import TEAMS_META from './data/teams_meta.json';
+import DRIVERS_META from './data/drivers_meta.json';
+import ENGINEERS_META from './data/engineers_meta.json';
 import { runChampionshipSimulation, RIVAL_DRIVERS, DriverEntry } from './simulation';
 import { GameSlot, TeamCombination, ActiveCombo, SlotType } from './types';
 import { RadarChart } from './components/RadarChart';
@@ -165,14 +169,41 @@ interface SavedSession {
 
 export default function App() {
   // Navigation & States
-  const [difficultyMode, setDifficultyMode] = useState<'normal' | 'hard' | 'underdog'>('normal');
-  const [activeSlotIndex, setActiveSlotIndex] = useState<number>(0);
-  const [slots, setSlots] = useState<Record<string, any>>({});
-  const [jokerAvailable, setJokerAvailable] = useState<boolean>(true);
-  const [activeCombo, setActiveCombo] = useState<TeamCombination | null>(null);
+  const [difficultyMode, setDifficultyMode] = useState<'normal' | 'hard' | 'underdog'>(() => {
+    return (localStorage.getItem('f1_difficulty_mode') as any) || 'normal';
+  });
+  const [activeSlotIndex, setActiveSlotIndex] = useState<number>(() => {
+    return Number(localStorage.getItem('f1_active_slot_index') || '0');
+  });
+  const [slots, setSlots] = useState<Record<string, any>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('f1_slots') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [jokerAvailable, setJokerAvailable] = useState<boolean>(() => {
+    return localStorage.getItem('f1_joker_available') !== 'false';
+  });
+  const [activeCombo, setActiveCombo] = useState<TeamCombination | null>(() => {
+    try {
+      const saved = localStorage.getItem('f1_active_combo');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [candidates, setCandidates] = useState<any[]>([]);
   const [rulesModalOpen, setRulesModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [restrictiveMode, setRestrictiveMode] = useState<'none' | 'elite' | 'no-meme' | 'only-meme'>(() => {
+    return (localStorage.getItem('f1_restrictive_mode') as any) || 'none';
+  });
+  const [bankruptcyModalOpen, setBankruptcyModalOpen] = useState<boolean>(false);
+  const [bankruptcyDetails, setBankruptcyDetails] = useState<{ teamName: string; position: number; points: number; isMultiplayer: boolean; playerList?: string[]; failedStaff?: any } | null>(null);
+  const [historyEncyclopediaOpen, setHistoryEncyclopediaOpen] = useState<boolean>(false);
+  const [activeEncyclopediaTab, setActiveEncyclopediaTab] = useState<'teams' | 'drivers' | 'engineers'>('teams');
+  const [encyclopediaSearch, setEncyclopediaSearch] = useState<string>('');
 
   // Custom singleplayer team name and color customization
   const [playerTeamName, setPlayerTeamName] = useState<string>(() => {
@@ -184,11 +215,23 @@ export default function App() {
   const [isTeamNameInputFocused, setIsTeamNameInputFocused] = useState<boolean>(false);
 
   // Multiplayer championship states (2 to 4 simultaneous players)
-  const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
-  const [multiplayerPlayers, setMultiplayerPlayers] = useState<any[]>([]);
-  const [activeMultiPlayerIndex, setActiveMultiPlayerIndex] = useState<number>(0);
+  const [isMultiplayer, setIsMultiplayer] = useState<boolean>(() => {
+    return localStorage.getItem('f1_is_multiplayer') === 'true';
+  });
+  const [multiplayerPlayers, setMultiplayerPlayers] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('f1_multiplayer_players') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [activeMultiPlayerIndex, setActiveMultiPlayerIndex] = useState<number>(() => {
+    return Number(localStorage.getItem('f1_active_multiplayer_index') || '0');
+  });
   const [multiSetupOpen, setMultiSetupOpen] = useState<boolean>(false);
-  const [multiplayerCount, setMultiplayerCount] = useState<number>(4);
+  const [multiplayerCount, setMultiplayerCount] = useState<number>(() => {
+    return Number(localStorage.getItem('f1_multiplayer_count') || '4');
+  });
   const [tempPlayerConfigs, setTempPlayerConfigs] = useState<any[]>([
     { name: 'Jogador 1', teamName: 'Alpha Racing', color: '#FF1100' },
     { name: 'Jogador 2', teamName: 'Apex Precision', color: '#00BBEF' },
@@ -239,17 +282,39 @@ export default function App() {
   };
 
   // Buff cards states
-  const [availableCards, setAvailableCards] = useState<any[]>([]);
+  const [availableCards, setAvailableCards] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('f1_available_cards') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [selectedCardToUse, setSelectedCardToUse] = useState<any | null>(null);
   const [activeBuffModals, setActiveBuffModals] = useState<boolean>(false);
   const [buffHistory, setBuffHistory] = useState<string[]>([]);
   const [targetPlayerIdx, setTargetPlayerIdx] = useState<number>(0);
 
   // 2-Phase Live Championship Simulator States
-  const [simGpIdx, setSimGpIdx] = useState<number>(0);
-  const [simPhase, setSimPhase] = useState<'intro' | 'strategy' | 'quali' | 'finished_quali' | 'race_lights' | 'race' | 'finished_race'>('intro');
-  const [multiplayerStrategies, setMultiplayerStrategies] = useState<Record<number, string>>({});
-  const [multiplayerCards, setMultiplayerCards] = useState<Record<number, { cardId: string; racesLeft: number }>>({});
+  const [simGpIdx, setSimGpIdx] = useState<number>(() => {
+    return Number(localStorage.getItem('f1_sim_gp_idx') || '0');
+  });
+  const [simPhase, setSimPhase] = useState<'intro' | 'strategy' | 'quali' | 'finished_quali' | 'race_lights' | 'race' | 'finished_race'>(() => {
+    return (localStorage.getItem('f1_sim_phase') as any) || 'intro';
+  });
+  const [multiplayerStrategies, setMultiplayerStrategies] = useState<Record<number, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('f1_multiplayer_strategies') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [multiplayerCards, setMultiplayerCards] = useState<Record<number, { cardId: string; racesLeft: number }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('f1_multiplayer_cards') || '{}');
+    } catch {
+      return {};
+    }
+  });
   const [marioKartMode, setMarioKartMode] = useState<boolean>(false);
   const [simIsPlaying, setSimIsPlaying] = useState<boolean>(true);
   const [simSpeed, setSimSpeed] = useState<number>(1);
@@ -263,7 +328,9 @@ export default function App() {
   const [simYellowFlag, setSimYellowFlag] = useState<boolean>(false);
   const [simYellowFlagMessage, setSimYellowFlagMessage] = useState<string>('');
 
-  const [gameMode, setGameMode] = useState<'home' | 'draft' | 'simulating' | 'results' | 'duelo'>('home');
+  const [gameMode, setGameMode] = useState<'home' | 'draft' | 'simulating' | 'results' | 'duelo'>(() => {
+    return (localStorage.getItem('f1_game_mode') as any) || 'home';
+  });
   const [duelPreviousMode, setDuelPreviousMode] = useState<'home' | 'results'>('home');
   const [duelCompetitorA, setDuelCompetitorA] = useState<any>(null);
   const [duelCompetitorB, setDuelCompetitorB] = useState<any>(null);
@@ -708,10 +775,21 @@ export default function App() {
 
 
   // Simulation states
-  const [simulationResult, setSimulationResult] = useState<any>(null);
-  const [simActiveRaceIdx, setSimActiveRaceIdx] = useState<number>(-1);
+  const [simulationResult, setSimulationResult] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('f1_simulation_result');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [simActiveRaceIdx, setSimActiveRaceIdx] = useState<number>(() => {
+    return Number(localStorage.getItem('f1_sim_active_race_idx') || '-1');
+  });
   const [simLightsCount, setSimLightsCount] = useState<number>(0);
-  const [simRaceCompleted, setSimRaceCompleted] = useState<boolean>(false);
+  const [simRaceCompleted, setSimRaceCompleted] = useState<boolean>(() => {
+    return localStorage.getItem('f1_sim_race_completed') === 'true';
+  });
 
   // Session History (Session storage based)
   const [recentSessions, setRecentSessions] = useState<SavedSession[]>([]);
@@ -729,6 +807,62 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  }, []);
+
+  // Synchronize game states to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem('f1_game_mode', gameMode);
+      localStorage.setItem('f1_slots', JSON.stringify(slots));
+      localStorage.setItem('f1_active_slot_index', String(activeSlotIndex));
+      localStorage.setItem('f1_active_combo', activeCombo ? JSON.stringify(activeCombo) : '');
+      localStorage.setItem('f1_difficulty_mode', difficultyMode);
+      localStorage.setItem('f1_restrictive_mode', restrictiveMode);
+      localStorage.setItem('f1_is_multiplayer', String(isMultiplayer));
+      localStorage.setItem('f1_multiplayer_players', JSON.stringify(multiplayerPlayers));
+      localStorage.setItem('f1_active_multiplayer_index', String(activeMultiPlayerIndex));
+      localStorage.setItem('f1_multiplayer_count', String(multiplayerCount));
+      localStorage.setItem('f1_simulation_result', simulationResult ? JSON.stringify(simulationResult) : '');
+      localStorage.setItem('f1_sim_gp_idx', String(simGpIdx));
+      localStorage.setItem('f1_sim_phase', simPhase);
+      localStorage.setItem('f1_sim_active_race_idx', String(simActiveRaceIdx));
+      localStorage.setItem('f1_sim_race_lap', String(simRaceLap));
+      localStorage.setItem('f1_sim_race_completed', String(simRaceCompleted));
+      localStorage.setItem('f1_available_cards', JSON.stringify(availableCards));
+      localStorage.setItem('f1_multiplayer_strategies', JSON.stringify(multiplayerStrategies));
+      localStorage.setItem('f1_multiplayer_cards', JSON.stringify(multiplayerCards));
+      localStorage.setItem('f1_joker_available', String(jokerAvailable));
+    } catch (e) {
+      console.error('Erro ao syncreizar f1_game_state no localStorage:', e);
+    }
+  }, [
+    gameMode,
+    slots,
+    activeSlotIndex,
+    activeCombo,
+    difficultyMode,
+    restrictiveMode,
+    isMultiplayer,
+    multiplayerPlayers,
+    activeMultiPlayerIndex,
+    multiplayerCount,
+    simulationResult,
+    simGpIdx,
+    simPhase,
+    simActiveRaceIdx,
+    simRaceLap,
+    simRaceCompleted,
+    availableCards,
+    multiplayerStrategies,
+    multiplayerCards,
+    jokerAvailable
+  ]);
+
+  // Restore active draft candidates on refresh
+  useEffect(() => {
+    if (gameMode === 'draft' && activeCombo) {
+      generateCandidatesForSlot(GAME_SLOTS[activeSlotIndex], activeCombo, slots);
     }
   }, []);
 
@@ -761,6 +895,16 @@ export default function App() {
     setIsMultiplayer(true);
     setDifficultyMode('normal');
     
+    // Clear simulation running profiles and selected modifiers
+    setSimulationResult(null);
+    setSimGpIdx(0);
+    setSimPhase('intro');
+    setSimActiveRaceIdx(-1);
+    setSimRaceCompleted(false);
+    setAvailableCards([]);
+    setMultiplayerStrategies({});
+    setMultiplayerCards({});
+
     // Create the multiplayer draft states for each player
     const initializedPlayers = playerConfigs.map((p, idx) => {
       const rolled = getRandomComboExcept([], false);
@@ -831,11 +975,42 @@ export default function App() {
     setJokerAvailable(true);
     setGameMode('draft');
     
+    // Reset simulation and persistent active running states
+    setSimulationResult(null);
+    setSimGpIdx(0);
+    setSimPhase('intro');
+    setSimActiveRaceIdx(-1);
+    setSimRaceCompleted(false);
+    setAvailableCards([]);
+    setMultiplayerStrategies({});
+    setMultiplayerCards({});
+    
     // Draw first combination
     const rolled = getRandomComboExcept([], mode === 'underdog');
     setActiveCombo(rolled);
     generateCandidatesForSlot(GAME_SLOTS[0], rolled, {});
     playBeep(440, 0.1);
+  };
+
+  // Helper to determine if a driver choice is restricted under active rules
+  const isCandidateRestricted = (cand: any) => {
+    if (!cand || cand.entityType !== 'driver') return false;
+    const rating = cand.rating_geral || 80;
+
+    if (restrictiveMode === 'elite') {
+      const hasTitles = (cand.titles && cand.titles > 0) || cand.name.includes('(Tetracampeão)') || cand.name.includes('(Mestre da Chuva)') || cand.name.includes('(O Professor)') || cand.name.includes('(Kaiser sob Chuva)') || cand.name.includes('(El Nano)');
+      return rating < 83 && !hasTitles;
+    }
+
+    if (restrictiveMode === 'no-meme') {
+      return rating < 60;
+    }
+
+    if (restrictiveMode === 'only-meme') {
+      return rating >= 80;
+    }
+
+    return false;
   };
 
   // Draw Candidates based on Slot and Rolled Team Matchup
@@ -861,7 +1036,18 @@ export default function App() {
         return fullName.split(' (')[0].trim();
       };
 
-      const draftedBaseNames = new Set<string>();
+      const normalizeDriverName = (fullName: string) => {
+        if (!fullName) return '';
+        return fullName
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .split(' (')[0]
+          .replace(/[^a-z0-9]/g, '')
+          .trim();
+      };
+
+      const draftedNorms = new Set<string>();
 
       // Collect drafted base names across all slots and players
       if (isMultiplayer && multiplayerPlayers) {
@@ -869,7 +1055,7 @@ export default function App() {
           if (p.slots) {
             Object.values(p.slots).forEach((item: any) => {
               if (item && item.name) {
-                draftedBaseNames.add(getBaseDriverName(item.name));
+                draftedNorms.add(normalizeDriverName(item.name));
               }
             });
           }
@@ -877,7 +1063,7 @@ export default function App() {
       } else if (currentSlots) {
         Object.values(currentSlots).forEach((item: any) => {
           if (item && item.name) {
-            draftedBaseNames.add(getBaseDriverName(item.name));
+            draftedNorms.add(normalizeDriverName(item.name));
           }
         });
       }
@@ -886,13 +1072,58 @@ export default function App() {
       if (slots) {
         Object.values(slots).forEach((item: any) => {
           if (item && item.name) {
-            draftedBaseNames.add(getBaseDriverName(item.name));
+            draftedNorms.add(normalizeDriverName(item.name));
           }
         });
       }
 
       // Filter drivers that match any drafted base name
-      let filteredDrivers = teamDrivers.filter(d => !draftedBaseNames.has(getBaseDriverName(d.name)));
+      let filteredDrivers = teamDrivers.filter(d => !draftedNorms.has(normalizeDriverName(d.name)));
+
+      // Map dynamic drivers from our loaded DRIVERS_META list as additional alternatives
+      const extraPaddockPool = DRIVERS_META.map(meta => {
+        let rating = 80;
+        if (meta.tier === 'legend') rating = 94 + Math.min(5, meta.titles || 0);
+        else if (meta.tier === 'strong') rating = 86 + Math.floor(Math.random() * 6);
+        else if (meta.tier === 'average') rating = 75 + Math.floor(Math.random() * 10);
+        else if (meta.tier === 'weak') rating = 50 + Math.floor(Math.random() * 16);
+        else if (meta.tier === 'meme') rating = 30 + Math.floor(Math.random() * 25);
+
+        const pace = Math.min(100, Math.max(10, rating + (Math.random() * 6 - 3)));
+        const consistency = Math.min(100, Math.max(10, rating + (Math.random() * 6 - 3)));
+        const chuva = (meta.styleTags?.includes('rain_master') || meta.styleTags?.includes('wet_weather') || meta.id?.includes('senna') || meta.id?.includes('schumacher')) ? 99 : Math.min(100, Math.max(10, rating + (Math.random() * 10 - 5)));
+        const aggressiveness = meta.styleTags?.includes('aggressive') ? 92 : (meta.styleTags?.includes('smooth') ? 65 : 75 + Math.random() * 15);
+        const reliability = Math.min(100, Math.max(10, rating + (Math.random() * 8 - 4)));
+
+        return {
+          id: `${meta.id}_paddock`,
+          name: meta.name,
+          country: meta.country,
+          titles: meta.titles || 0,
+          wins: meta.tier === 'legend' ? 35 : (meta.tier === 'strong' ? 5 : 0),
+          podiums: meta.tier === 'legend' ? 80 : (meta.tier === 'strong' ? 12 : 0),
+          poles: meta.tier === 'legend' ? 25 : (meta.tier === 'strong' ? 4 : 0),
+          rating_geral: Math.round(rating),
+          pace: Math.round(pace),
+          consistency: Math.round(consistency),
+          chuva: Math.round(chuva),
+          aggressiveness: Math.round(Math.min(100, Math.max(10, aggressiveness))),
+          reliability: Math.round(reliability),
+          description: meta.notes || 'Piloto de renome histórico trazido à mesa de negociações do paddock.',
+          entityType: 'driver',
+          sourceTeam: 'Mercado de Pilotos',
+          sourceSeason: meta.eraStart || 2026,
+        };
+      });
+
+      const validExtraDrivers = extraPaddockPool.filter(d => !draftedNorms.has(normalizeDriverName(d.name)));
+
+      // Inject up to 2 random historic pilots from the external metadata into the draft options pool!
+      if (validExtraDrivers.length > 0) {
+        const shuffledExtras = [...validExtraDrivers].sort(() => 0.5 - Math.random());
+        const chosenExtras = shuffledExtras.slice(0, 2);
+        filteredDrivers = [...filteredDrivers, ...chosenExtras];
+      }
 
       // If we are looking for a rain specialist, let's inject historical wet weather masters as choices
       if (currentSlot.id === 'wet_specialist') {
@@ -976,7 +1207,7 @@ export default function App() {
         ];
         
         // Add valid ones who aren't already drafted by base name
-        const validWetMasters = wetMasters.filter(m => !draftedBaseNames.has(getBaseDriverName(m.name)));
+        const validWetMasters = wetMasters.filter(m => !draftedNorms.has(normalizeDriverName(m.name)));
         filteredDrivers = [...filteredDrivers, ...validWetMasters];
       }
 
@@ -1042,7 +1273,7 @@ export default function App() {
           }
         ];
         
-        const validLegends = legends.filter(l => !draftedBaseNames.has(getBaseDriverName(l.name)));
+        const validLegends = legends.filter(l => !draftedNorms.has(normalizeDriverName(l.name)));
         filteredDrivers = [...filteredDrivers, ...validLegends];
       }
 
@@ -1203,35 +1434,69 @@ export default function App() {
       ];
 
       // Shuffle and select up to 2 bad drivers that are not yet drafted, and inject them
-      const notDraftedBad = badDriversPool.filter(b => !draftedBaseNames.has(getBaseDriverName(b.name)));
+      const notDraftedBad = badDriversPool.filter(b => !draftedNorms.has(normalizeDriverName(b.name)));
       const shuffledBad = [...notDraftedBad].sort(() => 0.5 - Math.random());
       const selectedBad = shuffledBad.slice(0, 2);
 
       filteredDrivers = [...filteredDrivers, ...selectedBad];
 
+      // Ensure absolute uniqueness within the generated choices pool too!
+      const uniqueGeneratedCandidates: any[] = [];
+      const generatedNorms = new Set<string>();
+      filteredDrivers.forEach(d => {
+        const norm = normalizeDriverName(d.name);
+        if (!generatedNorms.has(norm) && !draftedNorms.has(norm)) {
+          generatedNorms.add(norm);
+          uniqueGeneratedCandidates.push(d);
+        }
+      });
+
       // Just in case slots are somehow completely empty, inject a classic fallback
-      if (filteredDrivers.length === 0) {
-        filteredDrivers.push({
-          id: 'hamilton_classic',
-          name: 'Lewis Hamilton (Clássico)',
-          country: 'Reino Unido 🇬🇧',
-          titles: 7,
-          wins: 103,
-          podiums: 195,
-          poles: 104,
-          rating_geral: 95,
-          pace: 96,
-          consistency: 94,
-          chuva: 97,
-          aggressiveness: 88,
-          reliability: 96,
-          description: 'Inserido como piloto lendário coringa disponível do paddock.',
-          entityType: 'driver',
-          sourceTeam: combo.teamName,
-          sourceSeason: combo.season,
-        } as any);
+      if (uniqueGeneratedCandidates.length === 0) {
+        const fallbackName = 'Lewis Hamilton (Clássico)';
+        if (!draftedNorms.has(normalizeDriverName(fallbackName))) {
+          uniqueGeneratedCandidates.push({
+            id: 'hamilton_classic',
+            name: fallbackName,
+            country: 'Reino Unido 🇬🇧',
+            titles: 7,
+            wins: 103,
+            podiums: 195,
+            poles: 104,
+            rating_geral: 95,
+            pace: 96,
+            consistency: 94,
+            chuva: 97,
+            aggressiveness: 88,
+            reliability: 96,
+            description: 'Inserido como piloto lendário coringa disponível do paddock.',
+            entityType: 'driver',
+            sourceTeam: combo.teamName,
+            sourceSeason: combo.season,
+          } as any);
+        } else {
+          uniqueGeneratedCandidates.push({
+            id: 'generic_legend_backup',
+            name: 'Piloto Lendário Coringa',
+            country: 'Mundo 🌐',
+            titles: 1,
+            wins: 20,
+            podiums: 50,
+            poles: 10,
+            rating_geral: 90,
+            pace: 90,
+            consistency: 90,
+            chuva: 90,
+            aggressiveness: 80,
+            reliability: 92,
+            description: 'Piloto extremamente experiente que se juntou de última hora.',
+            entityType: 'driver',
+            sourceTeam: combo.teamName,
+            sourceSeason: combo.season,
+          } as any);
+        }
       }
-      setCandidates(filteredDrivers);
+      setCandidates(uniqueGeneratedCandidates);
 
     } else if (currentSlot.type === 'boss') {
       // Official boss
@@ -1370,6 +1635,12 @@ export default function App() {
 
   // Handle Draft Selection
   const handleSelectCandidate = (item: any) => {
+    if (isCandidateRestricted(item)) {
+      triggerToast('⚠️ Este piloto está bloqueado sob a restrição de Cockpit atual! Ajuste o nível de restrição ou use Coringa.');
+      playBeep(220, 0.15);
+      return;
+    }
+
     const activeSlot = GAME_SLOTS[activeSlotIndex];
     const newSlots = { ...slots, [activeSlot.id]: item };
     setSlots(newSlots);
@@ -1781,7 +2052,11 @@ export default function App() {
       });
     }
 
-    driverRaceScores.sort((a, b) => b.score - a.score);
+    driverRaceScores.sort((a, b) => {
+      if (a.dnf && !b.dnf) return 1;
+      if (!a.dnf && b.dnf) return -1;
+      return b.score - a.score;
+    });
 
     const f1Points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
     const podium: { driver: string; team: string; color: string }[] = [];
@@ -2069,7 +2344,7 @@ export default function App() {
   // Live race timer loop step
   const tickRaceLap = () => {
     const nextLap = simRaceLap + 1;
-    if (nextLap > 5) {
+    if (nextLap > 50) {
       setSimPhase('finished_race');
       setSimYellowFlag(false);
       playBeep(987, 0.4);
@@ -2103,12 +2378,12 @@ export default function App() {
 
       const finalDriverObj = finalPositions[actualFinalIdx];
 
-      const progress = nextLap / 5;
+      const progress = nextLap / 50;
       const intermediateScore = startPos + (actualFinalIdx - startPos) * progress + (Math.random() - 0.5) * 1.8;
 
       let isDnf = driverState.isDnf;
       if (finalDriverObj?.dnf && !isDnf) {
-        const dnfTriggerLap = 2 + (finalIdx % 3);
+        const dnfTriggerLap = 3 + (finalIdx % 45);
         if (nextLap >= dnfTriggerLap) {
           isDnf = true;
           setSimYellowFlag(true);
@@ -2135,15 +2410,15 @@ export default function App() {
     const userBest = updatedRaceLeaderboard.find(d => isTeamUser(d.team));
 
     const commentaries = [
-      `🏎️ Lap ${nextLap}/5: Posições mudando na pista! Líder ${leader.driver} acelera forte.`,
+      `🏎️ Lap ${nextLap}/50: Posições mudando na pista! Líder ${leader.driver} acelera forte.`,
       userBest ? `📊 Seu carro (${userBest.driver}) se posiciona provisoriamente em P${updatedRaceLeaderboard.findIndex(d => d.driver === userBest.driver) + 1}.` : `🔋 Telemetria mostra desgaste acentuado de pneus para o pelotão.`,
     ];
 
     if (nextLap === 1) {
       commentaries.unshift(`🚦 LARGADA AUTORIZADA! ${leader.driver} faz excelente largada sob ronco de motores!`);
-    } else if (nextLap === 3) {
-      commentaries.unshift(`⚡ Volta 3: DRS autorizado e fura de vácuo nas retas principais.`);
-    } else if (nextLap === 5) {
+    } else if (nextLap === 25) {
+      commentaries.unshift(`⚡ Volta 25: Metade da corrida! Desgaste de pneus e estratégias de pit stop acionadas.`);
+    } else if (nextLap === 50) {
       commentaries.unshift(`🏁 VOLTA FINAL! Disputa metro a metro por pontos cruciais do campeonato!`);
     }
 
@@ -2159,7 +2434,7 @@ export default function App() {
   useEffect(() => {
     if (gameMode !== 'simulating' || !simIsPlaying) return;
 
-    const baseInterval = 1000;
+    const baseInterval = simPhase === 'race' ? 200 : 1000;
     const currentInterval = baseInterval / simSpeed;
 
     const intervalId = setInterval(() => {
@@ -2231,7 +2506,8 @@ export default function App() {
     // Get all initial drivers and teams from the first race to initialize the maps
     if (raceResults.length > 0) {
       raceResults[0].positions.forEach((p: any) => {
-        driverStandingsMap[p.driver] = {
+        const dKey = `${p.driver} (${p.team})`;
+        driverStandingsMap[dKey] = {
           points: 0,
           wins: 0,
           podiums: 0,
@@ -2246,30 +2522,36 @@ export default function App() {
 
     // Tally points across results
     raceResults.forEach((raceRes) => {
-      raceRes.positions.forEach((p: any, idx: number) => {
-        const entry = driverStandingsMap[p.driver];
+      let finisherIndex = 0;
+      raceRes.positions.forEach((p: any) => {
+        const dKey = `${p.driver} (${p.team})`;
+        const entry = driverStandingsMap[dKey];
         if (entry) {
           if (p.dnf) {
             entry.dnfCount += 1;
             // No points scored
             p.points = 0;
           } else {
-            const pts = idx < 10 ? pointsList[idx] : 0;
+            const pts = finisherIndex < 10 ? pointsList[finisherIndex] : 0;
             p.points = pts; // persist
             entry.points += pts;
             teamStandingsMap[p.team] = (teamStandingsMap[p.team] || 0) + pts;
             
-            if (idx === 0) entry.wins += 1;
-            if (idx < 3) entry.podiums += 1;
+            if (finisherIndex === 0) entry.wins += 1;
+            if (finisherIndex < 3) entry.podiums += 1;
+            finisherIndex++;
           }
         }
       });
     });
 
-    const driverStandings = Object.keys(driverStandingsMap).map(drvName => ({
-      driver: drvName,
-      ...driverStandingsMap[drvName],
-    })).sort((a, b) => b.points - a.points);
+    const driverStandings = Object.keys(driverStandingsMap).map(dKeyName => {
+      const val = driverStandingsMap[dKeyName];
+      return {
+        driver: dKeyName.split(' (')[0],
+        ...val,
+      };
+    }).sort((a, b) => b.points - a.points);
 
     const teamStandings = Object.keys(teamStandingsMap).map(tName => {
       const isU = isTeamUser(tName);
@@ -2494,6 +2776,50 @@ export default function App() {
       sessionStorage.setItem('f1_draft_history', JSON.stringify(updated));
     } catch (e) {
       console.error(e);
+    }
+
+    // Check if player or multiplayer players lost the standing (position > 1)
+    const teamStandings = simulationResult.teamStandings;
+    if (isMultiplayer) {
+      const bankrupts: string[] = [];
+      multiplayerPlayers.forEach(p => {
+        const idx = teamStandings.findIndex((t: any) => t.team === p.teamName);
+        if (idx > 0 || idx === -1) {
+          const pos = idx !== -1 ? idx + 1 : teamStandings.length;
+          const pts = idx !== -1 ? teamStandings[idx].points : 0;
+          bankrupts.push(`🔴 ${p.name} (${p.teamName}) — Posição #${pos} com ${pts} pts`);
+        }
+      });
+
+      if (bankrupts.length > 0) {
+        setBankruptcyDetails({
+          teamName: 'Diversas Escuderias',
+          position: 0,
+          points: 0,
+          isMultiplayer: true,
+          playerList: bankrupts
+        });
+        setBankruptcyModalOpen(true);
+      }
+    } else {
+      const userTeamIdx = teamStandings.findIndex((t: any) => t.isUser);
+      if (userTeamIdx > 0 || userTeamIdx === -1) {
+        const pos = userTeamIdx !== -1 ? userTeamIdx + 1 : 6;
+        const pts = userTeamIdx !== -1 ? teamStandings[userTeamIdx].points : 0;
+        setBankruptcyDetails({
+          teamName: playerTeamName,
+          position: pos,
+          points: pts,
+          isMultiplayer: false,
+          failedStaff: {
+            driver_1: slots['driver_1'],
+            team_boss: slots['team_boss'],
+            chassis: slots['chassis'],
+            engineer: slots['engineer']
+          }
+        });
+        setBankruptcyModalOpen(true);
+      }
     }
 
     setGameMode('results');
@@ -2860,6 +3186,42 @@ Jogue agora em: ${window.location.href}`;
     return tips.sort((a, b) => (priorityPoints[b.priority] || 0) - (priorityPoints[a.priority] || 0));
   };
 
+  const filteredTeamsMeta = TEAMS_META.filter(team => {
+    if (!encyclopediaSearch) return true;
+    const q = encyclopediaSearch.toLowerCase();
+    return (
+      team.name.toLowerCase().includes(q) ||
+      team.country.toLowerCase().includes(q) ||
+      team.notes.toLowerCase().includes(q) ||
+      (team.reputationTags && team.reputationTags.some((tag: string) => tag.toLowerCase().includes(q))) ||
+      team.tier.toLowerCase().includes(q)
+    );
+  });
+
+  const filteredDriversMeta = DRIVERS_META.filter(drv => {
+    if (!encyclopediaSearch) return true;
+    const q = encyclopediaSearch.toLowerCase();
+    return (
+      drv.name.toLowerCase().includes(q) ||
+      drv.country.toLowerCase().includes(q) ||
+      drv.notes.toLowerCase().includes(q) ||
+      (drv.styleTags && drv.styleTags.some((tag: string) => tag.toLowerCase().includes(q))) ||
+      drv.tier.toLowerCase().includes(q)
+    );
+  });
+
+  const filteredEngineersMeta = ENGINEERS_META.filter(eng => {
+    if (!encyclopediaSearch) return true;
+    const q = encyclopediaSearch.toLowerCase();
+    return (
+      eng.name.toLowerCase().includes(q) ||
+      eng.notes.toLowerCase().includes(q) ||
+      (eng.teams && eng.teams.some((teamName: string) => teamName.toLowerCase().includes(q))) ||
+      (eng.reputationTags && eng.reputationTags.some((tag: string) => tag.toLowerCase().includes(q))) ||
+      eng.tier.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div id="app_root" className="min-h-screen bg-[#050505] text-[#E0E0E0] font-sans flex flex-col justify-between select-none relative overflow-x-hidden">
       {/* Ambient glowing background overlay */}
@@ -3005,11 +3367,33 @@ Jogue agora em: ${window.location.href}`;
                 </div>
               </div>
 
+              {/* Callout do Museu da F1 */}
+              <div className="bg-gradient-to-r from-red-950/20 via-neutral-900/40 to-neutral-900/10 border border-neutral-800 p-4 rounded flex flex-col sm:flex-row justify-between items-center gap-4 mt-2 max-w-3xl">
+                <div className="text-left space-y-1">
+                  <span className="text-[9px] font-mono text-[#FF1801] tracking-widest font-bold uppercase block">⚡ MARAVILHAS DOS DADOS PADDOCK</span>
+                  <h4 className="text-sm font-display font-medium text-white tracking-tight">Museu F1 de Construtores &amp; Pilotos Memoráveis</h4>
+                  <p className="text-[11px] text-[#888] font-sans">
+                    Navegue por perfis detalhados de construtores históricos, pilotos GOATs, designers e memes icônicos da F1 que abastecem as cartas de draft e as estatísticas de simulação do jogo.
+                  </p>
+                </div>
+                <button
+                  id="btn_open_encyclopedia_home"
+                  onClick={() => {
+                    setHistoryEncyclopediaOpen(true);
+                    playBeep(523, 0.1);
+                  }}
+                  className="bg-[#151515] hover:bg-[#222] text-neutral-200 border border-neutral-700 hover:border-[#FF1801] font-display font-bold text-xs px-5 py-2.5 rounded transition-all cursor-pointer whitespace-nowrap active:scale-95 text-center flex items-center space-x-1.5 hover:shadow-[0_0_15px_rgba(255,24,1,0.15)]"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-[#FF1801]" />
+                  <span>PORTAL DE DADOS F1</span>
+                </button>
+              </div>
+
               {/* Informação rápida de rodagem */}
               <div className="grid grid-cols-3 gap-6 border-t border-[#222] pt-6 max-w-lg text-xs font-mono">
                 <div>
                   <span className="block text-[#666] uppercase font-bold text-[10px]">CORRIDAS</span>
-                  <span className="text-white font-bold text-base block mt-0.5">8 GPs do Calendário</span>
+                  <span className="text-white font-bold text-base block mt-0.5">{CIRCUITS.length} GPs do Calendário</span>
                 </div>
                 <div>
                   <span className="block text-[#666] uppercase font-bold text-[10px]">PILOTOS</span>
@@ -3654,19 +4038,55 @@ Jogue agora em: ${window.location.href}`;
                   <div className="p-6 space-y-4">
                     <h5 className="text-[10px] font-mono text-gray-500 uppercase tracking-widest">Alternativas Oficiais de Contrato:</h5>
                     
+                    {/* Filtro Restritivo de Contratos */}
+                    <div className="bg-[#111] border border-[#222] p-3 rounded flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                      <div>
+                        <span className="font-bold text-gray-300 block uppercase tracking-wider text-[9px] font-mono mb-0.5">
+                          🛡️ Restrição do Cockpit (Licença Paddock)
+                        </span>
+                        <p className="text-[10px] text-[#777] font-sans leading-tight">
+                          {restrictiveMode === 'none' && "Paddock Aberto: Todos os pilotos do sorteio estão elegíveis para contratação."}
+                          {restrictiveMode === 'elite' && "Super Licença Elite: Apenas pilotos com rating >= 83 ou títulos de renome podem assinar."}
+                          {restrictiveMode === 'no-meme' && "Foco Profissional: Pilotos meme ou amadores com rating < 60 estão suspensos."}
+                          {restrictiveMode === 'only-meme' && "Desafio Renegados: Apenas pilotos meme ou fundo de grid são elegíveis!"}
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-1 w-full sm:w-auto">
+                        <select
+                          id="select_restrictive_mode"
+                          value={restrictiveMode}
+                          onChange={(e) => {
+                            setRestrictiveMode(e.target.value as any);
+                            playBeep(600, 0.08);
+                          }}
+                          className="bg-[#050505]/80 border border-[#333] text-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#FF1801] text-xs font-mono w-full sm:w-auto cursor-pointer"
+                        >
+                          <option value="none">🔓 Paddock Aberto (Todos)</option>
+                          <option value="elite">👑 Super Licença Elite (GOATs)</option>
+                          <option value="no-meme">🛡️ Sem Pilotos Meme (Rating &gt;= 60)</option>
+                          <option value="only-meme">🤡 Apenas Pilotos Meme (Rating &lt; 80)</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {candidates.map((cand) => {
                         const slotId = GAME_SLOTS[activeSlotIndex]?.id;
                         const currentComboNames = detectCombos(slots).map(c => c.name);
                         const simulatedCombos = slotId ? detectCombos({ ...slots, [slotId]: cand }) : [];
                         const activatedCombos = simulatedCombos.filter(c => !currentComboNames.includes(c.name));
+                        const isRestricted = isCandidateRestricted(cand);
 
                         return (
                           <div
                             key={cand.id || cand.name}
                             id={`candidate_card_${cand.id || cand.name}`}
                             onClick={() => handleSelectCandidate(cand)}
-                            className="bg-[#050505] border border-[#222] hover:border-[#FF1801] hover:bg-[#111]/30 rounded p-4 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 text-left group flex flex-col justify-between"
+                            className={`bg-[#050505] border hover:bg-[#111]/30 rounded p-4 cursor-pointer transition-all text-left flex flex-col justify-between ${
+                              isRestricted
+                                ? 'opacity-30 border-red-950/45 bg-red-950/5 cursor-not-allowed hover:border-red-950'
+                                : 'border-[#222] hover:border-[#FF1801] hover:scale-[1.02] active:scale-95 group'
+                            }`}
                           >
                             <div className="space-y-2">
                               <div className="flex justify-between items-start">
@@ -3679,7 +4099,12 @@ Jogue agora em: ${window.location.href}`;
                                   </h6>
                                 </div>
 
-                                {difficultyMode === 'normal' ? (
+                                {isRestricted ? (
+                                  <span className="bg-red-950/80 border border-red-800 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm flex items-center space-x-1">
+                                    <Lock className="h-2.5 w-2.5 inline text-[#FF1801]" />
+                                    <span>LICENÇA RESTRITA</span>
+                                  </span>
+                                ) : difficultyMode === 'normal' ? (
                                   <span className="bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801] font-mono font-bold text-[10px] px-2 py-0.5 rounded-sm">
                                     RATING {cand.rating_geral}
                                   </span>
@@ -3886,7 +4311,7 @@ Jogue agora em: ${window.location.href}`;
                         {simPhase === 'quali' && 'CLASSIFICAÇÃO'}
                         {simPhase === 'finished_quali' && 'GRID DE LARGADA'}
                         {simPhase === 'race_lights' && 'ALINHAMENTO'}
-                        {simPhase === 'race' && `CORRIDA LIVE - LAP ${simRaceLap}/5`}
+                        {simPhase === 'race' && `CORRIDA LIVE - LAP ${simRaceLap}/50`}
                         {simPhase === 'finished_race' && 'GP FINALIZADO'}
                       </span>
                     </div>
@@ -3912,7 +4337,7 @@ Jogue agora em: ${window.location.href}`;
                     </button>
 
                     <div className="flex items-center bg-[#111] rounded border border-neutral-800 p-0.5">
-                      {[1, 2, 4].map((speedVal) => (
+                      {[1, 2, 4, 8].map((speedVal) => (
                         <button
                           key={speedVal}
                           type="button"
@@ -3952,7 +4377,7 @@ Jogue agora em: ${window.location.href}`;
                         type="button"
                         onClick={() => {
                           setSimPhase('finished_race');
-                          setSimRaceLap(5);
+                          setSimRaceLap(50);
                           setSimYellowFlag(false);
                           playBeep(987, 0.4);
                           const finalPositions = simulationResult.raceResults[simGpIdx].positions;
@@ -4254,7 +4679,7 @@ Jogue agora em: ${window.location.href}`;
                           const isTeamUserDriver = isTeamUser(d.team);
                           return (
                             <div
-                              key={d.driver}
+                              key={`${d.driver}-${d.team}-${index}`}
                               className={`flex items-center justify-between p-2 rounded transition-all text-xs ${
                                 isActive 
                                   ? 'bg-[#FF1801]/10 border border-[#FF1801] shadow-[0_0_10px_rgba(255,24,1,0.1)]' 
@@ -4418,7 +4843,7 @@ Jogue agora em: ${window.location.href}`;
                       <h3 className="font-mono text-zinc-400 text-xs uppercase tracking-widest pb-2 border-b border-neutral-900 mb-2 font-bold">GRID OFICIAL DE PROVA DE TELEMETRIA</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
                         {simQualiLeaderboard.map((qd, index) => (
-                          <div key={qd.driver} className="flex justify-between items-center bg-black/40 p-2 border border-neutral-900 rounded-sm">
+                          <div key={`${qd.driver}-${qd.team}-${index}`} className="flex justify-between items-center bg-black/40 p-2 border border-neutral-900 rounded-sm">
                             <div className="flex items-center space-x-2.5 truncate">
                               <span className="font-bold text-neutral-500">G{index + 1}</span>
                               <div className="h-2 w-2 rounded-full" style={{ backgroundColor: qd.color }} />
@@ -4481,7 +4906,7 @@ Jogue agora em: ${window.location.href}`;
                         <div className="flex justify-between items-center border-b border-neutral-900 pb-2">
                           <h3 className="font-display font-bold text-white text-xs uppercase tracking-wider flex items-center space-x-1.5">
                             <Gauge className="h-4 w-4 text-emerald-400 animate-pulse" />
-                            <span>Tabela de Corrida - Volta {simRaceLap}/5</span>
+                            <span>Tabela de Corrida - Volta {simRaceLap}/50</span>
                           </h3>
                         </div>
 
@@ -4491,7 +4916,7 @@ Jogue agora em: ${window.location.href}`;
                             const tValues = simTelemetryValues[d.driver];
                             return (
                               <div
-                                key={d.driver}
+                                key={`${d.driver}-${d.team}-${index}`}
                                 className={`flex items-center justify-between p-2 rounded border text-xs leading-none transition-all ${
                                   d.isDnf 
                                     ? 'bg-red-950/10 border-red-900/30 opacity-70' 
@@ -4658,11 +5083,20 @@ Jogue agora em: ${window.location.href}`;
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {simulationResult.raceResults[simGpIdx]?.positions.map((p: any, pIdx: number) => (
-                          <div key={p.driver} className="p-2 bg-zinc-950/40 border border-neutral-900/60 rounded flex justify-between items-center text-[11px] leading-none">
+                          <div key={`${p.driver}-${p.team}-${pIdx}`} className="p-2 bg-zinc-950/40 border border-neutral-900/60 rounded flex justify-between items-center text-[11px] leading-none">
                             <div className="flex items-center space-x-2 truncate">
                               <span className="font-bold text-zinc-500">P{pIdx + 1}</span>
                               <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                              <span className="text-white font-bold truncate">{p.driver.split(' ').pop()}</span>
+                              <span className="text-white font-bold truncate mr-1">{p.driver.split(' ').pop()}</span>
+                              {p.stress !== undefined && (
+                                <span className={`text-[8px] px-1 font-mono rounded font-bold shrink-0 ${
+                                  p.stress > 80 ? 'bg-red-950/70 text-[#FF1801] border border-red-900/40' :
+                                  p.stress > 50 ? 'bg-amber-950/70 text-amber-500 border border-amber-900/40' :
+                                  'bg-neutral-900 text-neutral-400'
+                                }`} title={`Nível de estresse acumulado: ${p.stress}%`}>
+                                  🧠 {p.stress}%
+                                </span>
+                              )}
                             </div>
                             <span className={`font-bold ${p.points > 0 ? 'text-amber-400' : 'text-neutral-500'}`}>
                               {p.dnf ? 'DNF' : `+${p.points} PTS`}
@@ -5357,6 +5791,15 @@ Jogue agora em: ${window.location.href}`;
                                     </span>
                                     <span className="truncate" title={`${p.driver} (${p.team})`}>
                                       {p.driver} <span className="text-[7.5px] opacity-60 text-gray-400">({p.team})</span>
+                                      {p.stress !== undefined && (
+                                        <span className={`text-[7px] font-bold px-1 ml-1 rounded font-mono ${
+                                          p.stress > 80 ? 'bg-red-950/50 text-[#FF1801]' :
+                                          p.stress > 50 ? 'bg-amber-950/50 text-amber-500' :
+                                          'bg-zinc-900 text-zinc-400'
+                                        }`}>
+                                          🧠 {p.stress}%
+                                        </span>
+                                      )}
                                     </span>
                                   </span>
                                   
@@ -6232,7 +6675,7 @@ Jogue agora em: ${window.location.href}`;
               <div className="space-y-2">
                 <span className="font-bold text-white block uppercase">🏁 A SIMULAÇÃO DA CORRIDA:</span>
                 <p>
-                  Os desfechos das 8 corridas do ano não são fakes. Uma sólida engine lógica roda levando em consideração o Ritmo (Pace) do piloto sorteado, Confiabilidade mecânica do carro de base, força de Engenharia e Estratégia de Box contra o clima instável dos circuitos. Batidas e quebras (DNFs) ocorrem caso monte uma equipe instável ou agressiva demais!
+                  Os desfechos das 24 corridas do ano não são fakes. Uma sólida engine lógica roda levando em consideração o Ritmo (Pace) do piloto sorteado, Confiabilidade mecânica do carro de base, força de Engenharia e Estratégia de Box contra o clima instável dos circuitos. Batidas e quebras (DNFs) ocorrem caso monte uma equipe instável ou agressiva demais!
                 </p>
               </div>
             </div>
@@ -6247,6 +6690,413 @@ Jogue agora em: ${window.location.href}`;
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 5.2 MODAL DE FALÊNCIA TRISTE (FECHAR EQUIPE) ==================== */}
+      {bankruptcyModalOpen && bankruptcyDetails && (
+        <div id="bankruptcy_modal" className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-[#0e0a0a] border-2 border-red-900 rounded-xl p-6 sm:p-8 max-w-xl w-full space-y-6 relative animate-zoom-in shadow-[0_0_50px_rgba(255,24,1,0.35)] text-left">
+            <div className="absolute top-0 right-0 p-3 text-[8px] text-red-500 font-mono uppercase tracking-widest leading-none">Credores Ativos</div>
+            
+            <div className="flex flex-col items-center text-center space-y-3 pb-4 border-b border-red-950">
+              <div className="h-16 w-16 bg-red-950/40 border border-red-700/50 rounded-full flex items-center justify-center text-red-500 animate-pulse">
+                <Frown className="h-10 w-10 animate-spin-slow" />
+              </div>
+              <span className="px-2.5 py-0.5 rounded bg-red-950/50 text-red-400 font-mono text-[9px] uppercase border border-red-900/60 font-bold">
+                MURAL DA TRISTEZA • DECRETO DE FALÊNCIA IMEDIATA
+              </span>
+              <h4 className="font-display font-bold text-white text-2xl tracking-tight uppercase">
+                {bankruptcyDetails.isMultiplayer ? "💥 Múltiplas Escuderias Falidas!" : `🚨 Adeus, ${bankruptcyDetails.teamName}!`}
+              </h4>
+              <p className="text-xs text-gray-400 leading-relaxed max-w-lg">
+                Após uma simulação de campeonato brutal, seus credores e a junta técnica concluíram que a sobrevivência financeira desta escuderia é inviável, tendo em vista que você não obteve o primeiro lugar sob os holofotes. As portas da fábrica deverão ser soldadas imediatamente.
+              </p>
+            </div>
+
+            <div className="space-y-4 text-xs text-gray-300 max-h-[40vh] overflow-y-auto pr-1">
+              {bankruptcyDetails.isMultiplayer ? (
+                <div className="space-y-3">
+                  <span className="font-bold text-red-400 block uppercase font-mono tracking-wider">📋 ESCUDERIAS DE JOGADORES QUE FORAM FECHADAS:</span>
+                  <div className="space-y-2 bg-black/40 p-3 rounded border border-red-950/50 font-mono text-xs">
+                    {bankruptcyDetails.playerList?.map((line, idx) => (
+                      <div key={idx} className="flex items-start space-x-2 border-b border-red-950/20 pb-2 last:border-0 last:pb-0 text-red-200">
+                        <span className="text-red-500 font-bold">•</span>
+                        <span>{line}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-gray-500 italic font-sans mt-2">
+                    Apenas a escuderia campeã do campeonato gerou receitas de bilheteria e patrocínio suficientes para se manter ativa no circo da F1! Os perdedores foram despejados do paddock de forma impiedosa.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-[#1c0e0e]/45 border border-red-950 p-4 rounded text-xs space-y-2 leading-relaxed">
+                    <span className="font-bold text-red-400 uppercase tracking-wider block text-[10px]">📊 BALANÇO FINANCEIRO DE DESPEDIDA:</span>
+                    <ul className="list-disc pl-4 space-y-1 font-mono text-[11px] text-gray-400">
+                      <li><strong>Nome do Time:</strong> {bankruptcyDetails.teamName}</li>
+                      <li><strong>Colocação Final:</strong> #{bankruptcyDetails.position} no campeonato</li>
+                      <li><strong>Pontuação Acumulada:</strong> {bankruptcyDetails.points} pontos de equipe</li>
+                      <li><strong>Dívidas com Fornecedores:</strong> $42.500.000 USD (Multas da FIA)</li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="font-bold text-red-400 block uppercase font-mono tracking-wider">📰 O TRISTE DESTINO DA SUA EQUIPE:</span>
+                    <div className="space-y-2 text-gray-400 leading-relaxed pl-1 text-[11px] font-sans">
+                      <p>
+                        🔹 O piloto titular <strong className="text-white">{bankruptcyDetails.failedStaff?.driver_1?.name || 'seu piloto principal'}</strong> foi visto chorando no motorhome ao assinar sua rescisão forçada de contrato. O coitado deitou ao chão e foi contratado para pilotar karts elétricos promocionais em um shopping paulista.
+                      </p>
+                      <p>
+                        🔹 O chefe de equipe <strong className="text-white">{bankruptcyDetails.failedStaff?.team_boss?.name || 'seu chefe de time'}</strong> tentou trancar fisicamente o reboque de transporte, mas os oficiais de justiça confiscaram inclusive seus computadores e relógios de mureta.
+                      </p>
+                      <p>
+                        🔹 Os bólidos e o chassi lendário <strong className="text-white">{bankruptcyDetails.failedStaff?.chassis?.name || 'seu chassi'}</strong> foram desmontados e leiloados em pacotes de sucata no Mercado Livre por valores irrisórios para sanar os prejuízos de refeição do paddock.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-red-950 pt-4 flex justify-between items-center gap-4">
+              <span className="text-[9px] text-gray-500 font-mono italic">"A F1 é um esporte de glórias, mas de falência para os perdedores."</span>
+              <button
+                id="btn_declare_bankruptcy_close"
+                onClick={() => {
+                  setBankruptcyModalOpen(false);
+                  playBeep(440, 0.1);
+                  triggerToast("💸 Ativos liquidados! Veja os detalhes da temporada.");
+                }}
+                className="bg-red-950 hover:bg-red-900 border border-red-700 text-red-200 font-display font-medium text-xs px-6 py-2.5 rounded transition-all cursor-pointer uppercase tracking-widest active:scale-95"
+              >
+                VENDER DOUTORADO & LIQUIDAR ATIVOS
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 5.3 PORTAL DE DADOS F1 & MUSEU HISTÓRICO ==================== */}
+      {historyEncyclopediaOpen && (
+        <div id="paddock_encyclopedia_modal" className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-[#0b0c10] border border-neutral-800 rounded-xl p-6 sm:p-8 max-w-4xl w-full h-[85vh] flex flex-col space-y-5 relative animate-zoom-in text-left">
+            <button
+              type="button"
+              id="btn_close_encyclopedia"
+              onClick={() => {
+                setHistoryEncyclopediaOpen(false);
+                playBeep(330, 0.15);
+              }}
+              className="absolute top-4 right-4 text-gray-500 hover:text-white font-mono text-xs uppercase p-1.5 transition-all focus:outline-none border border-neutral-800/40 hover:border-neutral-700 rounded cursor-pointer"
+            >
+              FECHAR ✕
+            </button>
+
+            <div className="space-y-1">
+              <span className="text-[9px] font-mono text-[#FF1801] tracking-widest font-bold uppercase block">
+                🏛️ ARQUIVOS OFICIAIS DO PADDOCK
+              </span>
+              <h3 className="font-display font-medium text-white text-2xl tracking-tight">
+                Museu de Construtores &amp; Pilotos Memoráveis
+              </h3>
+              <p className="text-xs text-gray-400">
+                Explore os perfis de equipes lendárias, pilotos históricos (desde campeões renomados até os maiores memes) e engenheiros chefes que moldaram as eras da Fórmula 1.
+              </p>
+            </div>
+
+            {/* Abas e Filtros */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-neutral-800 pb-3">
+              <div className="flex bg-black/50 p-1 rounded-lg border border-neutral-800 gap-1 w-full sm:w-auto">
+                <button
+                  type="button"
+                  id="tab_teams"
+                  onClick={() => {
+                    setActiveEncyclopediaTab('teams');
+                    setEncyclopediaSearch('');
+                    playBeep(580, 0.05);
+                  }}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-mono rounded font-bold transition-all cursor-pointer ${
+                    activeEncyclopediaTab === 'teams'
+                      ? 'bg-[#FF1801] text-white shadow-md'
+                      : 'text-[#888] hover:text-white'
+                  }`}
+                >
+                  🏎️ Equipes
+                </button>
+                <button
+                  type="button"
+                  id="tab_drivers"
+                  onClick={() => {
+                    setActiveEncyclopediaTab('drivers');
+                    setEncyclopediaSearch('');
+                    playBeep(640, 0.05);
+                  }}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-mono rounded font-bold transition-all cursor-pointer ${
+                    activeEncyclopediaTab === 'drivers'
+                      ? 'bg-[#FF1801] text-white shadow-md'
+                      : 'text-[#888] hover:text-white'
+                  }`}
+                >
+                  👑 Pilotos
+                </button>
+                <button
+                  type="button"
+                  id="tab_engineers"
+                  onClick={() => {
+                    setActiveEncyclopediaTab('engineers');
+                    setEncyclopediaSearch('');
+                    playBeep(700, 0.05);
+                  }}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-xs font-mono rounded font-bold transition-all cursor-pointer ${
+                    activeEncyclopediaTab === 'engineers'
+                      ? 'bg-[#FF1801] text-white shadow-md'
+                      : 'text-[#888] hover:text-white'
+                  }`}
+                >
+                  🔧 Engenheiros
+                </button>
+              </div>
+
+              {/* Contador rápido */}
+              <span className="text-[10px] font-mono text-[#AAA] bg-[#111] px-3 py-1.5 rounded-md border border-neutral-800">
+                RESULTADOS:{' '}
+                <strong>
+                  {activeEncyclopediaTab === 'teams' &&
+                    (encyclopediaSearch ? `${filteredTeamsMeta.length} / ${TEAMS_META.length}` : TEAMS_META.length)}
+                  {activeEncyclopediaTab === 'drivers' &&
+                    (encyclopediaSearch ? `${filteredDriversMeta.length} / ${DRIVERS_META.length}` : DRIVERS_META.length)}
+                  {activeEncyclopediaTab === 'engineers' &&
+                    (encyclopediaSearch ? `${filteredEngineersMeta.length} / ${ENGINEERS_META.length}` : ENGINEERS_META.length)}
+                </strong>
+              </span>
+            </div>
+
+            {/* Campo de Busca Especial */}
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-zinc-500 text-xs">
+                🔍
+              </span>
+              <input
+                type="text"
+                id="encyclopedia_search_input"
+                placeholder={
+                  activeEncyclopediaTab === 'teams'
+                    ? "Buscar equipes por nome, país de origem, tags de reputação..."
+                    : activeEncyclopediaTab === 'drivers'
+                    ? "Buscar pilotos por nome, país, estilo de pilotagem ou notas..."
+                    : "Buscar engenheiros por nome, equipes de passagem e tags..."
+                }
+                value={encyclopediaSearch}
+                onChange={(e) => setEncyclopediaSearch(e.target.value)}
+                className="w-full bg-black/60 hover:bg-black/80 border border-neutral-800 text-xs text-white pl-9 pr-16 py-2.5 rounded-lg font-sans placeholder-neutral-500 focus:outline-none focus:border-[#FF1801] transition-all"
+              />
+              {encyclopediaSearch && (
+                <button
+                  type="button"
+                  id="btn_clear_encyclopedia_search"
+                  onClick={() => {
+                    setEncyclopediaSearch('');
+                    playBeep(400, 0.05);
+                  }}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-500 hover:text-white text-[10px] uppercase font-mono cursor-pointer focus:outline-none"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+
+            {/* Conteúdo com scroll */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+              {activeEncyclopediaTab === 'teams' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredTeamsMeta.length === 0 ? (
+                    <div className="col-span-full py-16 text-center text-neutral-500 font-mono text-xs">
+                      Nenhuma equipe encontrada para a busca "{encyclopediaSearch}".
+                    </div>
+                  ) : (
+                    filteredTeamsMeta.map((team, idx) => {
+                      const activeYearsText = team.activeYears
+                        ? `${team.activeYears[0]} - ${team.activeYears[1] || 'Presente'}`
+                        : 'N/A';
+                      return (
+                      <div
+                        key={team.id || idx}
+                        className="bg-black/40 border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-4.5 space-y-3 transition-colors text-left"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-display font-bold text-white text-base tracking-tight">
+                              {team.name}
+                            </h4>
+                            <span className="text-[10px] font-mono text-gray-400">
+                              🌍 {team.country} • 📅 {activeYearsText}
+                            </span>
+                          </div>
+                          <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
+                            team.tier === 'legend' ? 'bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801]' :
+                            team.tier === 'strong' ? 'bg-amber-500/15 border border-amber-500/30 text-amber-500' :
+                            team.tier === 'meme' ? 'bg-purple-500/15 border border-purple-500/30 text-purple-400' :
+                            'bg-neutral-800 text-neutral-400'
+                          }`}>
+                            Tier {team.tier}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                          {team.notes}
+                        </p>
+
+                        <div className="flex flex-wrap gap-1 pt-1.5 border-t border-neutral-900">
+                          {team.reputationTags?.map((tag: string) => (
+                            <span key={tag} className="text-[8.5px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-400 px-2 py-0.5 rounded-sm uppercase">
+                              #{tag.replace(/_/g, ' ')}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px] font-mono bg-[#111]/40 p-2.5 rounded border border-neutral-900/60 leading-tight">
+                          <div>
+                            <span className="text-neutral-500 block text-[8px] uppercase">Títulos Pilotos:</span>
+                            <span className="text-neutral-100 font-bold">{team.titlesDriversApprox || 0}</span>
+                          </div>
+                          <div>
+                            <span className="text-neutral-500 block text-[8px] uppercase">Títulos Construtores:</span>
+                            <span className="text-neutral-100 font-bold">{team.titlesConstructorsApprox || 0}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+              {activeEncyclopediaTab === 'drivers' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredDriversMeta.length === 0 ? (
+                    <div className="col-span-full py-16 text-center text-neutral-500 font-mono text-xs">
+                      Nenhum piloto encontrado para a busca "{encyclopediaSearch}".
+                    </div>
+                  ) : (
+                    filteredDriversMeta.map((drv, idx) => {
+                      const eraText = `${drv.eraStart} - ${drv.eraEnd || 'Presente'}`;
+                      return (
+                        <div
+                          key={drv.id || idx}
+                          className="bg-black/40 border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-4.5 space-y-3 transition-colors text-left"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center space-x-1.5">
+                                <h4 className="font-display font-medium text-white text-base tracking-tight leading-none">
+                                  {drv.name}
+                                </h4>
+                                {drv.hallOfFame && (
+                                  <span className="text-[10px]" title="Hall of Fame">⭐</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-mono text-gray-400 block mt-1">
+                                {drv.country} • era: {eraText}
+                              </span>
+                            </div>
+                            <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
+                              drv.tier === 'legend' ? 'bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801]' :
+                              drv.tier === 'strong' ? 'bg-amber-500/15 border border-amber-500/30 text-amber-500' :
+                              drv.tier === 'meme' ? 'bg-purple-500/15 border border-purple-500/30 text-purple-400' :
+                              'bg-neutral-800 text-neutral-400'
+                            }`}>
+                              🏆 {drv.titles > 0 ? `${drv.titles}T` : 'Sem Títulos'}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                            {drv.notes}
+                          </p>
+
+                          <div className="flex flex-wrap gap-1 pt-1.5 border-t border-neutral-900">
+                            <span className="text-[8.5px] font-mono bg-red-950/20 border border-red-900/30 text-[#FF1801] px-2 py-0.5 rounded-sm uppercase">
+                              TIER: {drv.tier}
+                            </span>
+                            {drv.styleTags?.map((tag: string) => (
+                              <span key={tag} className="text-[8.5px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-400 px-2 py-0.5 rounded-sm uppercase">
+                                #{tag.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {activeEncyclopediaTab === 'engineers' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredEngineersMeta.length === 0 ? (
+                    <div className="col-span-full py-16 text-center text-neutral-500 font-mono text-xs">
+                      Nenhum engenheiro encontrado para a busca "{encyclopediaSearch}".
+                    </div>
+                  ) : (
+                    filteredEngineersMeta.map((eng, idx) => {
+                      const eraText = `${eng.eraStart} - ${eng.eraEnd || 'Presente'}`;
+                      return (
+                        <div
+                          key={eng.id || idx}
+                          className="bg-black/40 border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-4.5 space-y-3 transition-colors text-left"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className="font-display font-medium text-white text-base tracking-tight">
+                                {eng.name}
+                              </h4>
+                              <span className="text-[10px] font-mono text-gray-400 block mt-0.5">
+                                📅 Era: {eraText}
+                              </span>
+                            </div>
+                            <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
+                              eng.tier === 'legend' ? 'bg-[#FF1801]/15 border border-[#FF1801]/30 text-[#FF1801]' :
+                              eng.tier === 'strong' ? 'bg-amber-500/15 border border-amber-500/30 text-amber-500' :
+                              'bg-neutral-800 text-neutral-400'
+                            }`}>
+                              Títulos: {eng.titlesConstructorsApprox || 0}C
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                            {eng.notes}
+                          </p>
+
+                          <div className="space-y-1.5 text-[10px] font-mono">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-neutral-500 text-[8.5px] uppercase">EQUIPES DE PASSAGEM:</span>
+                              <span className="text-neutral-300">{eng.teams?.join(', ')}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1 pt-1.5 border-t border-neutral-900">
+                            {eng.reputationTags?.map((tag: string) => (
+                              <span key={tag} className="text-[8.5px] font-mono bg-neutral-900 border border-neutral-800 text-neutral-400 px-2 py-0.5 rounded-sm uppercase">
+                                #{tag.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-neutral-800 pt-3 text-center">
+              <span className="text-[10px] font-mono text-neutral-500 uppercase tracking-widest">
+                © Banco de Dados Históricos Automobilísticos
+              </span>
+            </div>
           </div>
         </div>
       )}
