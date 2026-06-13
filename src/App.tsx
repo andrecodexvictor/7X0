@@ -42,7 +42,8 @@ import {
   ChevronRight,
   Eye,
   ChevronDown,
-  Sparkle
+  Sparkle,
+  XCircle
 } from 'lucide-react';
 import { GAME_SLOTS, CIRCUITS, SEASONS_TEAMS, getRandomComboExcept, evaluateQualityRank, detectCombos } from './data';
 import TEAMS_META from './data/teams_meta.json';
@@ -207,6 +208,7 @@ export default function App() {
   });
   const [candidates, setCandidates] = useState<any[]>([]);
   const [rulesModalOpen, setRulesModalOpen] = useState<boolean>(false);
+  const [showAbortModal, setShowAbortModal] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [restrictiveMode, setRestrictiveMode] = useState<'none' | 'elite' | 'no-meme' | 'only-meme'>(() => {
     return (localStorage.getItem('f1_restrictive_mode') as any) || 'none';
@@ -974,6 +976,22 @@ export default function App() {
     playBeep(440, 0.1);
   };
 
+  const handleAbortSeason = () => {
+    setGameMode('home');
+    setSlots({});
+    setActiveSlotIndex(0);
+    setSimulationResult(null);
+    setSimGpIdx(0);
+    setSimPhase('intro');
+    setSimActiveRaceIdx(-1);
+    setSimRaceCompleted(false);
+    setActiveCombo(null);
+    setCandidates([]);
+    triggerToast('🏁 Temporada abortada. Retornando ao paddock inicial!');
+    playBeep(220, 0.2);
+    setShowAbortModal(false);
+  };
+
   // Helper to determine if a driver choice is restricted under active rules
   const isCandidateRestricted = (cand: any) => {
     if (!cand || cand.entityType !== 'driver') return false;
@@ -1003,20 +1021,40 @@ export default function App() {
   ) => {
     if (!combo) return;
 
+    // Helper to extract a simplified brand name to group team historical properties
+    const getTeamBrand = (teamName: string) => {
+      if (!teamName) return '';
+      const lower = teamName.toLowerCase();
+      if (lower.includes('ferrari')) return 'ferrari';
+      if (lower.includes('red bull') || lower.includes('redbull')) return 'red bull';
+      if (lower.includes('mercedes')) return 'mercedes';
+      if (lower.includes('williams')) return 'williams';
+      if (lower.includes('mclaren')) return 'mclaren';
+      if (lower.includes('renault')) return 'renault';
+      if (lower.includes('benetton')) return 'benetton';
+      if (lower.includes('jordan')) return 'jordan';
+      if (lower.includes('minardi')) return 'minardi';
+      if (lower.includes('hrt')) return 'hrt';
+      if (lower.includes('aston martin') || lower.includes('astonmartin')) return 'aston martin';
+      if (lower.includes('brawn')) return 'brawn';
+      if (lower.includes('lotus')) return 'lotus';
+      if (lower.includes('alfa romeo') || lower.includes('sauber')) return 'sauber';
+      if (lower.includes('alphatauri') || lower.includes('toro rosso')) return 'toro rosso';
+      return lower.split(' ')[0] || lower;
+    };
+
+    const activeBrand = getTeamBrand(combo.teamName);
+    const teamWords = combo.teamName.split(' ');
+    const teamShortName = teamWords[0] || combo.teamName;
+
     if (currentSlot.type === 'driver') {
-      // Get drivers from team
+      // Get drivers from current slot combo active team/season (primary choice)
       const teamDrivers = combo.drivers.map(d => ({
         ...d,
         entityType: 'driver',
         sourceTeam: combo.teamName,
         sourceSeason: combo.season,
       }));
-
-      // Base name comparison helper (strips " (Mestre da Chuva)", "(O Professor)", etc.)
-      const getBaseDriverName = (fullName: string) => {
-        if (!fullName) return '';
-        return fullName.split(' (')[0].trim();
-      };
 
       const normalizeDriverName = (fullName: string) => {
         return normalizeDriverNameGlobal(fullName);
@@ -1052,218 +1090,103 @@ export default function App() {
         });
       }
 
-      // Filter drivers that match any drafted base name
-      let filteredDrivers = teamDrivers.filter(d => !draftedNorms.has(normalizeDriverName(d.name)));
-
-      // Map dynamic drivers from our loaded DRIVERS_META list as additional alternatives
-      const extraPaddockPool = DRIVERS_META.map(meta => {
-        let rating = 80;
-        if (meta.tier === 'legend') rating = 94 + Math.min(5, meta.titles || 0);
-        else if (meta.tier === 'strong') rating = 86 + Math.floor(Math.random() * 6);
-        else if (meta.tier === 'average') rating = 75 + Math.floor(Math.random() * 10);
-        else if (meta.tier === 'weak') rating = 50 + Math.floor(Math.random() * 16);
-        else if (meta.tier === 'meme') rating = 30 + Math.floor(Math.random() * 25);
-
-        const pace = Math.min(100, Math.max(10, rating + (Math.random() * 6 - 3)));
-        const consistency = Math.min(100, Math.max(10, rating + (Math.random() * 6 - 3)));
-        const chuva = (meta.styleTags?.includes('rain_master') || meta.styleTags?.includes('wet_weather') || meta.id?.includes('senna') || meta.id?.includes('schumacher')) ? 99 : Math.min(100, Math.max(10, rating + (Math.random() * 10 - 5)));
-        const aggressiveness = meta.styleTags?.includes('aggressive') ? 92 : (meta.styleTags?.includes('smooth') ? 65 : 75 + Math.random() * 15);
-        const reliability = Math.min(100, Math.max(10, rating + (Math.random() * 8 - 4)));
-
-        return {
-          id: `${meta.id}_paddock`,
-          name: meta.name,
-          country: meta.country,
-          titles: meta.titles || 0,
-          wins: meta.tier === 'legend' ? 35 : (meta.tier === 'strong' ? 5 : 0),
-          podiums: meta.tier === 'legend' ? 80 : (meta.tier === 'strong' ? 12 : 0),
-          poles: meta.tier === 'legend' ? 25 : (meta.tier === 'strong' ? 4 : 0),
-          rating_geral: Math.round(rating),
-          pace: Math.round(pace),
-          consistency: Math.round(consistency),
-          chuva: Math.round(chuva),
-          aggressiveness: Math.round(Math.min(100, Math.max(10, aggressiveness))),
-          reliability: Math.round(reliability),
-          description: meta.notes || 'Piloto de renome histórico trazido à mesa de negociações do paddock.',
-          entityType: 'driver',
-          sourceTeam: 'Mercado de Pilotos',
-          sourceSeason: meta.eraStart || 2026,
-        };
+      // Get drivers of the same team brand AND same season/year to populate alternatives
+      const otherTeamDrivers: any[] = [];
+      SEASONS_TEAMS.forEach(team => {
+        if (team.teamId !== combo.teamId && getTeamBrand(team.teamName) === activeBrand && team.season === combo.season) {
+          team.drivers.forEach(d => {
+            otherTeamDrivers.push({
+              ...d,
+              entityType: 'driver',
+              sourceTeam: team.teamName,
+              sourceSeason: team.season,
+            });
+          });
+        }
       });
 
-      const validExtraDrivers = extraPaddockPool.filter(d => !draftedNorms.has(normalizeDriverName(d.name)));
+      // Combine exact active season drivers only - strict team-by-team restriction
+      let candidateDriversPool = [...teamDrivers];
 
-      // Inject up to 2 random historic pilots from the external metadata into the draft options pool!
-      if (validExtraDrivers.length > 0) {
-        const shuffledExtras = [...validExtraDrivers].sort(() => 0.5 - Math.random());
-        const chosenExtras = shuffledExtras.slice(0, 2);
-        filteredDrivers = [...filteredDrivers, ...chosenExtras];
+      // Filter drivers that match any drafted base name
+      let filteredDrivers = candidateDriversPool.filter(d => !draftedNorms.has(normalizeDriverName(d.name)));
+
+      // If we don't have enough drivers of this team name brand of that season (e.g. because of drafts),
+      // we pull real F1 drivers of that same season / era from other teams in SEASONS_TEAMS
+      if (filteredDrivers.length < 3) {
+        const availableRealFallbacks: any[] = [];
+        const seenNames = new Set<string>();
+        
+        // Add existing filtered drivers to seen names to avoid duplicates
+        filteredDrivers.forEach(fd => seenNames.add(normalizeDriverName(fd.name)));
+
+        // Look for drivers in same season
+        SEASONS_TEAMS.forEach(t => {
+          if (t.season === combo.season) {
+            t.drivers.forEach(d => {
+              const normName = normalizeDriverName(d.name);
+              if (!seenNames.has(normName) && !draftedNorms.has(normName)) {
+                seenNames.add(normName);
+                availableRealFallbacks.push({
+                  ...d,
+                  originalTeam: t.teamName,
+                  originalSeason: t.season
+                });
+              }
+            });
+          }
+        });
+
+        // If still low, expand search to +-3 years of the same era
+        if (availableRealFallbacks.length < 3) {
+          SEASONS_TEAMS.forEach(t => {
+            if (Math.abs(t.season - combo.season) <= 3) {
+              t.drivers.forEach(d => {
+                const normName = normalizeDriverName(d.name);
+                if (!seenNames.has(normName) && !draftedNorms.has(normName)) {
+                  seenNames.add(normName);
+                  availableRealFallbacks.push({
+                    ...d,
+                    originalTeam: t.teamName,
+                    originalSeason: t.season
+                  });
+                }
+              });
+            }
+          });
+        }
+
+        // Shuffle fallback list to make choices organic and dynamic
+        availableRealFallbacks.sort(() => 0.5 - Math.random());
+
+        // Push fallbacks until we have 3 candidates
+        let fallbackIndex = 0;
+        while (filteredDrivers.length < 3 && fallbackIndex < availableRealFallbacks.length) {
+          const fb = availableRealFallbacks[fallbackIndex];
+          filteredDrivers.push({
+            id: `real_fallback_${fb.id || fb.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${combo.season}`,
+            name: `${fb.name}`,
+            country: fb.country || 'Mundo 🌐',
+            titles: fb.titles || 0,
+            wins: fb.wins || 0,
+            podiums: fb.podiums || 0,
+            poles: fb.poles || 0,
+            rating_geral: fb.rating_geral || 78,
+            pace: fb.pace || 78,
+            consistency: fb.consistency || 78,
+            chuva: fb.chuva || 78,
+            aggressiveness: fb.aggressiveness || 75,
+            reliability: fb.reliability || 78,
+            description: `Piloto real da categoria contratado como agente livre para a temporada de ${combo.season}. Originário da escuderia ${fb.originalTeam || 'F1'}.`,
+            entityType: 'driver',
+            sourceTeam: combo.teamName,
+            sourceSeason: combo.season,
+          });
+          fallbackIndex++;
+        }
       }
 
-      // Historically bad drivers pool (20-50 ratings) to create severe frustration
-      const badDriversPool = [
-        {
-          id: 'yuji_ide',
-          name: 'Yuji Ide',
-          country: 'Japão 🇯🇵',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 32,
-          pace: 35,
-          consistency: 20,
-          chuva: 30,
-          aggressiveness: 99,
-          reliability: 25,
-          description: 'Teve a superlicença cassada após capotar Christijan Albers em Imola 2006. Perigo público no asfalto.',
-          entityType: 'driver',
-          sourceTeam: 'Super Aguri',
-          sourceSeason: 2006,
-        },
-        {
-          id: 'chanoch_nissany',
-          name: 'Chanoch Nissany',
-          country: 'Israel 🇮🇱',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 25,
-          pace: 15,
-          consistency: 30,
-          chuva: 20,
-          aggressiveness: 10,
-          reliability: 40,
-          description: 'Ficou a 13 segundos do melhor tempo comum nos treinos livres e pediu para puxarem o carro da brita por telefone.',
-          entityType: 'driver',
-          sourceTeam: 'Minardi',
-          sourceSeason: 2005,
-        },
-        {
-          id: 'taki_inoue',
-          name: 'Taki Inoue',
-          country: 'Japão 🇯🇵',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 35,
-          pace: 30,
-          consistency: 38,
-          chuva: 25,
-          aggressiveness: 45,
-          reliability: 30,
-          description: 'Famoso por ser atropelado por um safety car estacionando em Mônaco, e depois atropelado pelo caminhão de resgate na Hungria.',
-          entityType: 'driver',
-          sourceTeam: 'Footwork',
-          sourceSeason: 1995,
-        },
-        {
-          id: 'ricardo_rosset',
-          name: 'Ricardo Rosset',
-          country: 'Brasil 🇧🇷',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 38,
-          pace: 42,
-          consistency: 32,
-          chuva: 35,
-          aggressiveness: 55,
-          reliability: 40,
-          description: 'Ficava fora dos 107% rotineiramente e uma vez bateu de frente nos pneus ao tentar retornar à pista.',
-          entityType: 'driver',
-          sourceTeam: 'Tyrrell',
-          sourceSeason: 1998,
-        },
-        {
-          id: 'giovanni_lavaggi',
-          name: 'Giovanni Lavaggi',
-          country: 'Itália 🇮🇹',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 40,
-          pace: 45,
-          consistency: 35,
-          chuva: 38,
-          aggressiveness: 40,
-          reliability: 45,
-          description: 'Conhecido vulgarmente como "Johnny Carwash" por sua lentidão extrema e incapacidade mecânica absoluta.',
-          entityType: 'driver',
-          sourceTeam: 'Minardi',
-          sourceSeason: 1996,
-        },
-        {
-          id: 'perry_mccarthy',
-          name: 'Perry McCarthy',
-          country: 'Reino Unido 🇬🇧',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 42,
-          pace: 48,
-          consistency: 30,
-          chuva: 40,
-          aggressiveness: 60,
-          reliability: 35,
-          description: 'Correu pela tenebrosa e falida Andrea Moda e é o Stig original cinzento do clássico programa Top Gear.',
-          entityType: 'driver',
-          sourceTeam: 'Andrea Moda',
-          sourceSeason: 1992,
-        },
-        {
-          id: 'alex_yoong',
-          name: 'Alex Yoong',
-          country: 'Malásia 🇲🇾',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 44,
-          pace: 46,
-          consistency: 42,
-          chuva: 50,
-          aggressiveness: 52,
-          reliability: 55,
-          description: 'Ficou fora de limites na classificação por mais de 5 segundos correndo pela simpática Minardi.',
-          entityType: 'driver',
-          sourceTeam: 'Minardi',
-          sourceSeason: 2002,
-        },
-        {
-          id: 'jean_denis_deletraz',
-          name: 'Jean-Denis Deletraz',
-          country: 'Suíça 🇨🇭',
-          titles: 0,
-          wins: 0,
-          podiums: 0,
-          poles: 0,
-          rating_geral: 36,
-          pace: 34,
-          consistency: 25,
-          chuva: 35,
-          aggressiveness: 40,
-          reliability: 30,
-          description: 'Terminou Adelaide 1994 dez voltas atrás do líder em apenas algumas passagens, andando mais lento que carros comuns de rua.',
-          entityType: 'driver',
-          sourceTeam: 'Larrousse',
-          sourceSeason: 1994,
-        }
-      ];
-
-      // Shuffle and select up to 2 bad drivers that are not yet drafted, and inject them
-      const notDraftedBad = badDriversPool.filter(b => !draftedNorms.has(normalizeDriverName(b.name)));
-      const shuffledBad = [...notDraftedBad].sort(() => 0.5 - Math.random());
-      const selectedBad = shuffledBad.slice(0, 2);
-
-      filteredDrivers = [...filteredDrivers, ...selectedBad];
-
-      // Ensure absolute uniqueness within the generated choices pool too!
+      // Ensure absolute uniqueness within the generated choices pool
       const uniqueGeneratedCandidates: any[] = [];
       const generatedNorms = new Set<string>();
       filteredDrivers.forEach(d => {
@@ -1274,53 +1197,7 @@ export default function App() {
         }
       });
 
-      // Just in case slots are somehow completely empty, inject a classic fallback
-      if (uniqueGeneratedCandidates.length === 0) {
-        const fallbackName = 'Lewis Hamilton (Clássico)';
-        if (!draftedNorms.has(normalizeDriverName(fallbackName))) {
-          uniqueGeneratedCandidates.push({
-            id: 'hamilton_classic',
-            name: fallbackName,
-            country: 'Reino Unido 🇬🇧',
-            titles: 7,
-            wins: 103,
-            podiums: 195,
-            poles: 104,
-            rating_geral: 95,
-            pace: 96,
-            consistency: 94,
-            chuva: 97,
-            aggressiveness: 88,
-            reliability: 96,
-            description: 'Inserido como piloto lendário coringa disponível do paddock.',
-            entityType: 'driver',
-            sourceTeam: combo.teamName,
-            sourceSeason: combo.season,
-          } as any);
-        } else {
-          uniqueGeneratedCandidates.push({
-            id: 'generic_legend_backup',
-            name: 'Piloto Lendário Coringa',
-            country: 'Mundo 🌐',
-            titles: 1,
-            wins: 20,
-            podiums: 50,
-            poles: 10,
-            rating_geral: 90,
-            pace: 90,
-            consistency: 90,
-            chuva: 90,
-            aggressiveness: 80,
-            reliability: 92,
-            description: 'Piloto extremamente experiente que se juntou de última hora.',
-            entityType: 'driver',
-            sourceTeam: combo.teamName,
-            sourceSeason: combo.season,
-          } as any);
-        }
-      }
-
-      // Shuffle options to maximize randomness and slice to at most 3 elements to reduce selection fatigue
+      // Shuffle options to maximize randomness and slice to at most 3 elements
       const randomizedSubset = [...uniqueGeneratedCandidates].sort(() => 0.5 - Math.random()).slice(0, 3);
       setCandidates(randomizedSubset);
 
@@ -1335,20 +1212,50 @@ export default function App() {
         }
       ];
 
-      // Add sibling alternatives from our database for exactly 3 options
-      const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
-      if (otherCombos.length > 0) {
-        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
-        shuffledOthers.slice(0, 2).forEach(randomOther => {
-          candidatesList.push({
-            ...randomOther.boss,
-            entityType: 'boss',
-            sourceTeam: randomOther.teamName,
-            sourceSeason: randomOther.season,
-          });
+      // Add sibling bosses with the exact same team brand AND same season
+      const siblingCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId && getTeamBrand(t.teamName) === activeBrand && t.season === combo.season);
+      siblingCombos.forEach(sibling => {
+        candidatesList.push({
+          ...sibling.boss,
+          entityType: 'boss',
+          sourceTeam: sibling.teamName,
+          sourceSeason: sibling.season,
         });
+      });
+
+      // Filter duplicates if any
+      let uniqueBosses = candidatesList.filter((b, idx, self) => self.findIndex(x => x.name === b.name) === idx);
+
+      // Fetch bosses from other teams/seasons (excluding currently present boss names)
+      const seenNames = new Set(uniqueBosses.map(b => b.name));
+      const otherCombos = [...SEASONS_TEAMS]
+        .filter(t => t.boss && t.boss.name && !seenNames.has(t.boss.name))
+        .sort((a, b) => Math.abs(a.season - combo.season) - Math.abs(b.season - combo.season));
+
+      let virtualCounter = 1;
+      for (const other of otherCombos) {
+        if (uniqueBosses.length >= 3) break;
+        if (!other.boss) continue;
+
+        uniqueBosses.push({
+          id: `external_boss_${other.teamId}_${combo.season}_${virtualCounter}`,
+          name: other.boss.name,
+          country: other.boss.country || 'Mundo 🌐',
+          rating_geral: other.boss.rating_geral || 78,
+          leadership: other.boss.leadership || other.boss.rating_geral || 80,
+          pressure_handling: other.boss.pressure_handling || other.boss.rating_geral || 75,
+          prestige: other.boss.prestige || other.boss.rating_geral || 78,
+          description: `Originalmente chefe de equipe da ${other.teamName} (${other.season}). Contratado como alternativa externa para reforçar a escuderia em ${combo.season}. ${other.boss.description || ''}`,
+          entityType: 'boss',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+        });
+
+        seenNames.add(other.boss.name);
+        virtualCounter++;
       }
-      setCandidates(candidatesList);
+
+      setCandidates(uniqueBosses.slice(0, 3));
 
     } else if (currentSlot.type === 'chassis') {
       const candidatesList = [
@@ -1359,20 +1266,41 @@ export default function App() {
           sourceSeason: combo.season,
         }
       ];
-      // Alt chassis
-      const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
-      if (otherCombos.length > 0) {
-        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
-        shuffledOthers.slice(0, 2).forEach(randomOther => {
-          candidatesList.push({
-            ...randomOther.chassis,
-            entityType: 'chassis',
-            sourceTeam: randomOther.teamName,
-            sourceSeason: randomOther.season,
-          });
+
+      // Add sibling chassis with the exact same team brand AND same season
+      const siblingCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId && getTeamBrand(t.teamName) === activeBrand && t.season === combo.season);
+      siblingCombos.forEach(sibling => {
+        candidatesList.push({
+          ...sibling.chassis,
+          entityType: 'chassis',
+          sourceTeam: sibling.teamName,
+          sourceSeason: sibling.season,
         });
+      });
+
+      let uniqueChassis = candidatesList.filter((c, idx, self) => self.findIndex(x => x.name === c.name) === idx);
+
+      // Fallback
+      let virtualCounter = 1;
+      while (uniqueChassis.length < 3 && virtualCounter <= 5) {
+        uniqueChassis.push({
+          id: `${activeBrand}_spec_chassis_${virtualCounter}`,
+          name: `${teamShortName} Spec-B (${combo.season})`,
+          engine: combo.chassis.engine,
+          rating_geral: 75,
+          top_speed: 76,
+          aerodynamics: 74,
+          conducao: 75,
+          reliability: 84,
+          description: `Projeto de chassi alternativo para ${teamShortName} refinado sob especificações de aerodinâmica de ${combo.season}.`,
+          entityType: 'chassis',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+        });
+        virtualCounter++;
       }
-      setCandidates(candidatesList);
+
+      setCandidates(uniqueChassis.slice(0, 3));
 
     } else if (currentSlot.type === 'engine') {
       // Resolve culturally matched engine first from ENGINES_META
@@ -1383,7 +1311,6 @@ export default function App() {
         e.bestKnownTeams.some(t => combo.teamName.toLowerCase().includes(t.toLowerCase()))
       );
       if (!matched) {
-        // Fallback to Renault or Ferrari if no obvious match
         matched = ENGINES_META.find(e => e.id === 'mercedes_hybrid') || ENGINES_META[0];
       }
 
@@ -1396,19 +1323,49 @@ export default function App() {
         }
       ];
 
-      // Fill remaining 2 options with random distinct engines
-      const otherEngines = ENGINES_META.filter(e => e.id !== matched!.id);
-      const shuffledOthers = [...otherEngines].sort(() => 0.5 - Math.random());
-      shuffledOthers.slice(0, 2).forEach(unmatched => {
+      // Fill remaining options strictly with engines of the duplicate brand OR related to this team, matching season
+      const matchedBrandLower = matched.brand.toLowerCase();
+      const matchingEngines = ENGINES_META.filter(e => 
+        e.id !== matched!.id && (
+          e.brand.toLowerCase().includes(matchedBrandLower) ||
+          matchedBrandLower.includes(e.brand.toLowerCase()) ||
+          e.bestKnownTeams.some(t => t.toLowerCase().includes(activeBrand) || activeBrand.includes(t.toLowerCase()))
+        )
+      );
+
+      matchingEngines.forEach(eng => {
         candidatesList.push({
-          ...unmatched,
+          ...eng,
           entityType: 'engine',
           sourceTeam: 'Mercado de Motores',
           sourceSeason: combo.season,
         });
       });
 
-      setCandidates(candidatesList);
+      let uniqueEngines = candidatesList.filter((e, idx, self) => self.findIndex(x => x.name === e.name) === idx);
+
+      // Fallback
+      let virtualCounter = 1;
+      while (uniqueEngines.length < 3 && virtualCounter <= 5) {
+        uniqueEngines.push({
+          id: `${activeBrand}_custom_powerunit_${virtualCounter}`,
+          name: `${matched.brand} Client Spec V${virtualCounter === 1 ? '10' : '8'} (${combo.season})`,
+          brand: matched.brand,
+          engineType: matched.engineType,
+          rating_geral: 76,
+          powerBias: 8,
+          reliabilityBias: 8,
+          efficiencyBias: 7,
+          driveabilityBias: 8,
+          entityType: 'engine',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+          notes: `Versão customizada de fornecimento de clientes compatível com as regras de ${combo.season}.`
+        } as any);
+        virtualCounter++;
+      }
+
+      setCandidates(uniqueEngines.slice(0, 3));
 
     } else if (currentSlot.type === 'strategist') {
       const candidatesList = [
@@ -1419,20 +1376,49 @@ export default function App() {
           sourceSeason: combo.season,
         }
       ];
-      // Alt strategist
-      const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
-      if (otherCombos.length > 0) {
-        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
-        shuffledOthers.slice(0, 2).forEach(randomOther => {
-          candidatesList.push({
-            ...randomOther.strategist,
-            entityType: 'strategist',
-            sourceTeam: randomOther.teamName,
-            sourceSeason: randomOther.season,
-          });
+
+      // Add sibling strategists with exact same team brand AND same season
+      const siblingCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId && getTeamBrand(t.teamName) === activeBrand && t.season === combo.season);
+      siblingCombos.forEach(sibling => {
+        candidatesList.push({
+          ...sibling.strategist,
+          entityType: 'strategist',
+          sourceTeam: sibling.teamName,
+          sourceSeason: sibling.season,
         });
+      });
+
+      let uniqueStrategists = candidatesList.filter((s, idx, self) => self.findIndex(x => x.name === s.name) === idx);
+
+      // Fetch strategists from other teams/seasons (excluding currently present names)
+      const seenNames = new Set(uniqueStrategists.map(s => s.name));
+      const otherCombos = [...SEASONS_TEAMS]
+        .filter(t => t.strategist && t.strategist.name && !seenNames.has(t.strategist.name))
+        .sort((a, b) => Math.abs(a.season - combo.season) - Math.abs(b.season - combo.season));
+
+      let virtualCounter = 1;
+      for (const other of otherCombos) {
+        if (uniqueStrategists.length >= 3) break;
+        if (!other.strategist) continue;
+
+        uniqueStrategists.push({
+          id: `external_strategist_${other.teamId}_${combo.season}_${virtualCounter}`,
+          name: other.strategist.name,
+          rating_geral: other.strategist.rating_geral || 76,
+          calculated_risk: other.strategist.calculated_risk || 70,
+          pit_tactics: other.strategist.pit_tactics || other.strategist.rating_geral || 78,
+          reactivity: other.strategist.reactivity || other.strategist.rating_geral || 75,
+          description: `Originalmente estrategista da equipe ${other.teamName} (${other.season}). Contratado como alternativa externa para a temporada de ${combo.season}. ${other.strategist.description || ''}`,
+          entityType: 'strategist',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+        });
+
+        seenNames.add(other.strategist.name);
+        virtualCounter++;
       }
-      setCandidates(candidatesList);
+
+      setCandidates(uniqueStrategists.slice(0, 3));
 
     } else if (currentSlot.type === 'engineer') {
       const candidatesList = [
@@ -1443,20 +1429,49 @@ export default function App() {
           sourceSeason: combo.season,
         }
       ];
-      // Alt engineer
-      const otherCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId);
-      if (otherCombos.length > 0) {
-        const shuffledOthers = [...otherCombos].sort(() => 0.5 - Math.random());
-        shuffledOthers.slice(0, 2).forEach(randomOther => {
-          candidatesList.push({
-            ...randomOther.engineer,
-            entityType: 'engineer',
-            sourceTeam: randomOther.teamName,
-            sourceSeason: randomOther.season,
-          });
+
+      // Add sibling engineers with exact same team brand AND same season
+      const siblingCombos = SEASONS_TEAMS.filter(t => t.teamId !== combo.teamId && getTeamBrand(t.teamName) === activeBrand && t.season === combo.season);
+      siblingCombos.forEach(sibling => {
+        candidatesList.push({
+          ...sibling.engineer,
+          entityType: 'engineer',
+          sourceTeam: sibling.teamName,
+          sourceSeason: sibling.season,
         });
+      });
+
+      let uniqueEngineers = candidatesList.filter((e, idx, self) => self.findIndex(x => x.name === e.name) === idx);
+
+      // Fetch engineers from other teams/seasons (excluding currently present names)
+      const seenNames = new Set(uniqueEngineers.map(e => e.name));
+      const otherCombos = [...SEASONS_TEAMS]
+        .filter(t => t.engineer && t.engineer.name && !seenNames.has(t.engineer.name))
+        .sort((a, b) => Math.abs(a.season - combo.season) - Math.abs(b.season - combo.season));
+
+      let virtualCounter = 1;
+      for (const other of otherCombos) {
+        if (uniqueEngineers.length >= 3) break;
+        if (!other.engineer) continue;
+
+        uniqueEngineers.push({
+          id: `external_engineer_${other.teamId}_${combo.season}_${virtualCounter}`,
+          name: other.engineer.name,
+          rating_geral: other.engineer.rating_geral || 76,
+          aerodynamics: other.engineer.aerodynamics || other.engineer.rating_geral || 74,
+          innovation: other.engineer.innovation || other.engineer.rating_geral || 75,
+          weight_saving: other.engineer.weight_saving || other.engineer.rating_geral || 80,
+          description: `Originalmente engenheiro de desenvolvimento da equipe ${other.teamName} (${other.season}). Contratado como alternativa externa para a temporada de ${combo.season}. ${other.engineer.description || ''}`,
+          entityType: 'engineer',
+          sourceTeam: combo.teamName,
+          sourceSeason: combo.season,
+        });
+
+        seenNames.add(other.engineer.name);
+        virtualCounter++;
       }
-      setCandidates(candidatesList);
+
+      setCandidates(uniqueEngineers.slice(0, 3));
     }
   };
 
@@ -1468,7 +1483,12 @@ export default function App() {
     // Pick another random team
     const rolled = getRandomComboExcept(activeCombo ? [activeCombo.teamId] : [], difficultyMode === 'underdog');
     setActiveCombo(rolled);
-    generateCandidatesForSlot(GAME_SLOTS[activeSlotIndex], rolled, slots);
+
+    const playerSlots = isMultiplayer
+      ? (multiplayerPlayers[activeMultiPlayerIndex]?.slots || {})
+      : slots;
+    
+    generateCandidatesForSlot(GAME_SLOTS[activeSlotIndex], rolled, playerSlots);
     
     if (isMultiplayer) {
       const updatedPlayers = [...multiplayerPlayers];
@@ -1489,7 +1509,12 @@ export default function App() {
     setActiveSlotIndex(idx);
     const rolled = activeCombo || getRandomComboExcept([], difficultyMode === 'underdog');
     setActiveCombo(rolled);
-    generateCandidatesForSlot(GAME_SLOTS[idx], rolled, slots);
+
+    const playerSlots = isMultiplayer
+      ? (multiplayerPlayers[activeMultiPlayerIndex]?.slots || {})
+      : slots;
+    
+    generateCandidatesForSlot(GAME_SLOTS[idx], rolled, playerSlots);
     
     if (isMultiplayer) {
       const updatedPlayers = [...multiplayerPlayers];
@@ -3286,6 +3311,22 @@ Jogue agora em: ${window.location.href}`;
               <Volume2 className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{soundEnabled ? 'Som On' : 'Som Off'}</span>
             </button>
+
+            {gameMode !== 'home' && (
+              <button
+                id="btn_abort_season"
+                onClick={() => {
+                  playBeep(440, 0.1);
+                  setShowAbortModal(true);
+                }}
+                className="px-3 py-1.5 rounded border border-red-500/45 text-red-500 bg-red-950/10 hover:bg-red-950/25 text-[11px] font-mono font-bold flex items-center space-x-1.5 transition-all uppercase cursor-pointer"
+                title="Abortar a temporada atual e retornar ao menu principal"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Abortar Temporada</span>
+                <span className="md:hidden inline">Abortar</span>
+              </button>
+            )}
 
             <button
               id="btn_help_rules"
@@ -6828,6 +6869,43 @@ Jogue agora em: ${window.location.href}`;
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 5.1 MODAL DE CONFIRMAÇÃO DE ABORTE ==================== */}
+      {showAbortModal && (
+        <div id="abort_confirm_modal" className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0e0a0a] border border-red-900/60 rounded-xl p-6 max-w-md w-full space-y-6 relative animate-zoom-in shadow-2xl">
+            <div className="flex flex-col items-center text-center space-y-3 pb-3">
+              <div className="h-12 w-12 bg-red-950/40 border border-red-500/30 rounded-full flex items-center justify-center text-red-500">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h4 className="font-display font-medium text-white text-lg uppercase tracking-tight">Abortar Temporada?</h4>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Você tem certeza de que deseja abortar a temporada atual? Todo o progresso do draft e simulação em andamento nesta sessão será perdido.
+              </p>
+            </div>
+
+            <div className="flex space-x-3 pb-2">
+              <button
+                id="btn_cancel_abort"
+                onClick={() => {
+                  playBeep(440, 0.05);
+                  setShowAbortModal(false);
+                }}
+                className="w-1/2 border border-[#222] bg-[#0A0A0A] hover:bg-[#111] text-gray-300 font-display font-medium text-xs py-2.5 rounded transition-all cursor-pointer text-center"
+              >
+                Voltar ao Jogo
+              </button>
+              <button
+                id="btn_confirm_abort"
+                onClick={handleAbortSeason}
+                className="w-1/2 bg-red-600 hover:bg-red-700 text-white font-display font-medium text-xs py-2.5 rounded transition-all cursor-pointer text-center font-bold"
+              >
+                Sim, Abortar!
+              </button>
+            </div>
           </div>
         </div>
       )}

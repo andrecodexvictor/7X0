@@ -4,6 +4,7 @@
  */
 
 import { TeamCombination, Race, GameSlot } from './types';
+import historicalStatsRaw from './data/f1_driver_season_stats_full.json';
 
 export const GAME_SLOTS: GameSlot[] = [
   {
@@ -267,7 +268,7 @@ export const CIRCUITS: Race[] = [
   },
 ];
 
-export const SEASONS_TEAMS: TeamCombination[] = [
+const HARDCODED_SEASONS_TEAMS: TeamCombination[] = [
   {
     season: 1988,
     teamId: 'mclaren_1988',
@@ -1651,6 +1652,987 @@ export const SEASONS_TEAMS: TeamCombination[] = [
     }
   }
 ];
+
+// Interface for historical driver stats
+interface StatsDriverRaw {
+  year: number;
+  name: string;
+  code: string;
+  teamName: string;
+  races: number;
+  wins: number;
+  podiums: number;
+  points: number;
+  pos: string;
+  rating_geral: number;
+  rank: string;
+}
+
+interface TeammateData {
+  name: string;
+  country: string;
+  titles: number;
+  wins: number;
+  podiums: number;
+  poles: number;
+  rating_offset?: number;
+  description: string;
+}
+
+const getDriverRealCountryAndFlag = (name: string): string => {
+  const norm = name.toLowerCase();
+  if (norm.includes('senna')) return 'Brasil 🇧🇷';
+  if (norm.includes('schumacher')) return 'Alemanha 🇩🇪';
+  if (norm.includes('hamilton')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('verstappen')) return 'Holanda 🇳🇱';
+  if (norm.includes('vettel')) return 'Alemanha 🇩🇪';
+  if (norm.includes('alonso')) return 'Espanha 🇪🇸';
+  if (norm.includes('prost')) return 'França 🇫🇷';
+  if (norm.includes('räikkönen') || norm.includes('raikkonen')) return 'Finlândia 🇫🇮';
+  if (norm.includes('rosberg')) return 'Alemanha 🇩🇪';
+  if (norm.includes('piquet')) return 'Brasil 🇧🇷';
+  if (norm.includes('fittipaldi')) return 'Brasil 🇧🇷';
+  if (norm.includes('barrichello')) return 'Brasil 🇧🇷';
+  if (norm.includes('massa')) return 'Brasil 🇧🇷';
+  if (norm.includes('bortoleto')) return 'Brasil 🇧🇷';
+  if (norm.includes('piastri')) return 'Austrália 🇦🇺';
+  if (norm.includes('lauda')) return 'Áustria 🇦🇹';
+  if (norm.includes('button')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('häkkinen') || norm.includes('hakkinen')) return 'Finlândia 🇫🇮';
+  if (norm.includes('damon hill')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('villeneuve')) return 'Canadá 🇨🇦';
+  if (norm.includes('mansell')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('alan jones')) return 'Austrália 🇦🇺';
+  if (norm.includes('keke rosberg')) return 'Finlândia 🇫🇮';
+  if (norm.includes('scheckter')) return 'África do Sul 🇿🇦';
+  if (norm.includes('andretti')) return 'Estados Unidos 🇺🇸';
+  if (norm.includes('james hunt')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('jackie stewart')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('rindt')) return 'Áustria 🇦🇹';
+  if (norm.includes('brabham')) return 'Austrália 🇦🇺';
+  if (norm.includes('hulme')) return 'Nova Zelândia 🇳🇿';
+  if (norm.includes('graham hill')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('surtees')) return 'Reino Unido 🇬🇧';
+  if (norm.includes('phil hill')) return 'Estados Unidos 🇺🇸';
+  if (norm.includes('fangio')) return 'Argentina 🇦🇷';
+  if (norm.includes('farina')) return 'Itália 🇮🇹';
+  if (norm.includes('fagioli')) return 'Itália 🇮🇹';
+  if (norm.includes('ascari')) return 'Itália 🇮🇹';
+  return 'Mundo 🌐';
+};
+
+const REAL_TEAMMATES_DB: Record<string, TeammateData[]> = {
+  "1961_ferrari": [
+    { name: "Wolfgang von Trips", country: "Alemanha 🇩🇪", titles: 0, wins: 2, podiums: 6, poles: 1, rating_offset: -2, description: "Liderava o campeonato de 1961 até sofrer um trágico acidente fatal em Monza." },
+    { name: "Richie Ginther", country: "Estados Unidos 🇺🇸", titles: 0, wins: 1, podiums: 14, poles: 0, rating_offset: -5, description: "Piloto extremamente técnico e engenheiro de testes excepcional da Scuderia." },
+    { name: "Giancarlo Baghetti", country: "Itália 🇮🇹", titles: 0, wins: 1, podiums: 1, poles: 0, rating_offset: -8, description: "Único piloto da história a vencer sua corrida de estreia na Fórmula 1 moderna." }
+  ],
+  "1962_brm": [
+    { name: "Richie Ginther", country: "Estados Unidos 🇺🇸", titles: 0, wins: 1, podiums: 14, poles: 0, rating_offset: -3, description: "Parceiro consistente de Graham Hill na marcante conquista do título de construtores." },
+    { name: "Tony Brooks", country: "Reino Unido 🇬🇧", titles: 0, wins: 6, podiums: 10, poles: 3, rating_offset: -4, description: "O 'Dentista Voador'. Um dos pilotos mais rápidos e elegantes dos anos 50 e 60." }
+  ],
+  "1963_lotus_climax": [
+    { name: "Trevor Taylor", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 1, poles: 0, rating_offset: -8, description: "Piloto britânico titular da Lotus ao lado de Jim Clark na lendária fase monocoque." },
+    { name: "Peter Arundell", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 2, poles: 0, rating_offset: -6, description: "Piloto oficial e um dos queridinhos do projetista Colin Chapman na Lotus." }
+  ],
+  "1964_ferrari": [
+    { name: "Lorenzo Bandini", country: "Itália 🇮🇹", titles: 0, wins: 1, podiums: 8, poles: 1, rating_offset: -4, description: "Herói italiano da Scuderia, taticamente crucial para o título de Surtees em 1964." },
+    { name: "Ludovico Scarfiotti", country: "Itália 🇮🇹", titles: 0, wins: 1, podiums: 1, poles: 0, rating_offset: -7, description: "Especialista em subidas de montanha e vencedor do GP da Itália de 1966 com a Ferrari." }
+  ],
+  "1965_lotus_climax": [
+    { name: "Mike Spence", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 1, poles: 0, rating_offset: -5, description: "Um escudeiro extremamente veloz e confiável de Jim Clark." },
+    { name: "Gerhard Mitter", country: "Alemanha 🇩🇪", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -9, description: "Piloto alemão de suporte para as provas europeias da Lotus." }
+  ],
+  "1966_brabham_repco": [
+    { name: "Denny Hulme", country: "Nova Zelândia 🇳🇿", titles: 1, wins: 8, podiums: 33, poles: 1, rating_offset: -2, description: "O 'Urso'. Conquistou ótimos pódios ao lado do chefe Jack Brabham em 1966." }
+  ],
+  "1967_brabham_repco": [
+    { name: "Jack Brabham", country: "Austrália 🇦🇺", titles: 3, wins: 14, podiums: 31, poles: 13, rating_offset: -1, description: "O próprio chefe de equipe correndo agressivamente contra seu pupilo Denny Hulme." }
+  ],
+  "1968_lotus_ford": [
+    { name: "Jochen Rindt", country: "Áustria 🇦🇹", titles: 1, wins: 6, podiums: 13, poles: 10, rating_offset: -1, description: "Piloto extremamente agressivo, futuramente o único campeão póstumo da F1." },
+    { name: "Jackie Oliver", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 4, poles: 0, rating_offset: -6, description: "Substituiu Jim Clark após a tragédia de Hockenheim, garantindo pódios valiosos." }
+  ],
+  "1969_matra_ford": [
+    { name: "Jean-Pierre Beltoise", country: "França 🇫🇷", titles: 0, wins: 1, podiums: 8, poles: 0, rating_offset: -5, description: "Piloto francês combativo, grande parceiro de mureta de Jackie Stewart." }
+  ],
+  "1970_team_lotus": [
+    { name: "Emerson Fittipaldi", country: "Brasil 🇧🇷", titles: 2, wins: 14, podiums: 35, poles: 6, rating_offset: -3, description: "O jovem promissor brasileiro que venceu em Watkins Glen garantindo o título póstumo de Rindt." },
+    { name: "John Miles", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -8, description: "Um dos pilotos de testes e desenvolvimento originais do lendário chassi Lotus 72." }
+  ],
+  "1971_tyrrell": [
+    { name: "François Cevert", country: "França 🇫🇷", titles: 0, wins: 1, podiums: 13, poles: 0, rating_offset: -3, description: "Carismático e talentoso herdeiro técnico de Jackie Stewart na Tyrrell." }
+  ],
+  "1972_team_lotus": [
+    { name: "Dave Walker", country: "Austrália 🇦🇺", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -9, description: "Piloto australiano titular que completou a temporada histórica ao lado do campeão Fittipaldi." },
+    { name: "Reine Wisell", country: "Suécia 🇸🇪", titles: 0, wins: 0, podiums: 1, poles: 0, rating_offset: -7, description: "Piloto sueco que correu como substituto na icônica equipe preta e dourada da JPS." }
+  ],
+  "1973_tyrrell": [
+    { name: "François Cevert", country: "França 🇫🇷", titles: 0, wins: 1, podiums: 13, poles: 0, rating_offset: -2, description: "Protegido de Stewart que infelizmente faleceu de forma trágica no GP dos EUA de 1973." },
+    { name: "Chris Amon", country: "Nova Zelândia 🇳🇿", titles: 0, wins: 0, podiums: 11, poles: 5, rating_offset: -4, description: "Considerado um dos melhores pilotos a nunca vencer um GP devido ao seu eterno azar." }
+  ],
+  "1974_mclaren": [
+    { name: "Denny Hulme", country: "Nova Zelândia 🇳🇿", titles: 1, wins: 8, podiums: 33, poles: 1, rating_offset: -3, description: "Camarada campeão experiente de Fittipaldi, que venceu o GP da Argentina de 1974." },
+    { name: "Mike Hailwood", country: "Reino Unido 🇬🇧", titles: 0, wins: 0, podiums: 2, poles: 0, rating_offset: -5, description: "Lenda lendária das motocicletas, muito respeitado por sua bravura nas quatro rodas." }
+  ],
+  "1975_ferrari": [
+    { name: "Clay Regazzoni", country: "Suíça 🇨🇭", titles: 0, wins: 5, podiums: 28, poles: 5, rating_offset: -3, description: "O implacável bigodudo suíço, vencedor do GP da Itália de 1975." }
+  ],
+  "1976_mclaren": [
+    { name: "Jochen Mass", country: "Alemanha 🇩🇪", titles: 0, wins: 1, podiums: 8, poles: 0, rating_offset: -4, description: "Parceiro ideal de James Hunt, garantindo o título de construtores de forma sólida." }
+  ],
+  "1977_ferrari": [
+    { name: "Carlos Reutemann", country: "Argentina 🇦🇷", titles: 0, wins: 12, podiums: 45, poles: 6, rating_offset: -3, description: "O 'Lole'. Piloto argentino extremamente técnico e veloz, porém sensível a pressões." },
+    { name: "Gilles Villeneuve", country: "Canadá 🇨🇦", titles: 0, wins: 6, podiums: 13, poles: 2, rating_offset: -5, description: "O lendário canadense que estreou pela Ferrari no final da temporada de 1977." }
+  ],
+  "1978_lotus_ford": [
+    { name: "Ronnie Peterson", country: "Suécia 🇸🇪", titles: 0, wins: 10, podiums: 26, poles: 14, rating_offset: -1, description: "O 'Sueco Voador'. Pilotagem espetacular por derrapagem controlada. Vice-campeão póstumo." },
+    { name: "Jean-Pierre Jarier", country: "França 🇫🇷", titles: 0, wins: 0, podiums: 3, poles: 3, rating_offset: -6, description: "Veloz piloto francês contratado para substituir Peterson na reta final de 1978." }
+  ],
+  "1979_ferrari": [
+    { name: "Gilles Villeneuve", country: "Canadá 🇨🇦", titles: 0, wins: 6, podiums: 13, poles: 2, rating_offset: -1, description: "A velocidade pura personificada. Deixou o título daquele ano para o parceiro Jody Scheckter." }
+  ],
+  "1980_williams_ford": [
+    { name: "Carlos Reutemann", country: "Argentina 🇦🇷", titles: 0, wins: 12, podiums: 45, poles: 6, rating_offset: -2, description: "Parceiro ultraveloz de Alan Jones, garantindo o título de construtores da equipe Williams." }
+  ],
+  "1981_brabham_ford": [
+    { name: "Hector Rebaque", country: "México 🇲🇽", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -8, description: "Piloto mexicano responsável por pontuar ao lado de Nelson Piquet na Brabham" },
+    { name: "Ricardo Zunino", country: "Argentina 🇦🇷", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -10, description: "Piloto argentino acionado de última hora para disputar GPs pela equipe de Ecclestone." }
+  ],
+  "1982_williams_ford": [
+    { name: "Derek Daly", country: "Irlanda 🇮🇪", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -6, description: "Piloto titular irlandês polivalente que acompanhou Keke Rosberg no ano do título." },
+    { name: "Carlos Reutemann", country: "Argentina 🇦🇷", titles: 0, wins: 12, podiums: 45, poles: 6, rating_offset: -3, description: "Disputou as primeiras corridas de 1982 pela Williams antes de se aposentar precocemente." }
+  ],
+  "1983_brabham_bmw": [
+    { name: "Riccardo Patrese", country: "Itália 🇮🇹", titles: 0, wins: 6, podiums: 37, poles: 8, rating_offset: -3, description: "Guerreiro experiente italiano que ajudou a Brabham na feroz disputa mecânica de 1983." }
+  ],
+  "1984_mclaren": [
+    { name: "Alain Prost", country: "França 🇫🇷", titles: 4, wins: 51, podiums: 106, poles: 33, rating_offset: 1, description: "O Professor. Perdeu o título de 1984 para Niki Lauda por apenas 0,5 ponto!" }
+  ],
+  "1985_mclaren_porsche": [
+    { name: "Niki Lauda", country: "Áustria 🇦🇹", titles: 3, wins: 25, podiums: 54, poles: 24, rating_offset: -2, description: "O lendário tricampeão disputando sua última temporada de Fórmula 1 antes de se aposentar definitivo." },
+    { name: "John Watson", country: "Reino Unido 🇬🇧", titles: 0, wins: 5, podiums: 20, poles: 2, rating_offset: -5, description: "Acionado para substituir Lauda no GP da Europa de 1985 em Brands Hatch." }
+  ],
+  "1986_mclaren_porsche": [
+    { name: "Keke Rosberg", country: "Finlândia 🇫🇮", titles: 1, wins: 5, podiums: 17, poles: 5, rating_offset: -3, description: "Lenda finlandesa corajosa que se juntou à McLaren no final de sua grande carreira." }
+  ],
+  "1987_williams_honda": [
+    { name: "Nigel Mansell", country: "Reino Unido 🇬🇧", titles: 1, wins: 31, podiums: 59, poles: 32, rating_offset: 0, description: "O 'Leão'. Companheiro e arquirrival feroz de Nelson Piquet no mundial épico de 1987." },
+    { name: "Riccardo Patrese", country: "Itália 🇮🇹", titles: 0, wins: 6, podiums: 37, poles: 8, rating_offset: -5, description: "Substituiu o lesionado Mansell na corrida final em Adelaide." }
+  ],
+  "1989_mclaren_honda": [
+    { name: "Ayrton Senna", country: "Brasil 🇧🇷", titles: 3, wins: 41, podiums: 80, poles: 65, rating_offset: 1, description: "Bateu rodas freneticamente com Prost na fatídica e controversa batida na chicane de Suzuka." }
+  ],
+  "1990_mclaren_honda": [
+    { name: "Gerhard Berger", country: "Áustria 🇦🇹", titles: 0, wins: 10, podiums: 48, poles: 12, rating_offset: -4, description: "Carismático brincalhão austríaco e amigo íntimo de Senna na lendária equipe." }
+  ],
+  "1991_mclaren_honda": [
+    { name: "Gerhard Berger", country: "Áustria 🇦🇹", titles: 0, wins: 10, podiums: 48, poles: 12, rating_offset: -3, description: "Companheiro carismático de Senna que o ajudou a neutralizar a ameaça das velozes Williams." }
+  ],
+  "1992_williams_renault": [
+    { name: "Riccardo Patrese", country: "Itália 🇮🇹", titles: 0, wins: 6, podiums: 37, poles: 8, rating_offset: -3, description: "Segunda força indiscutível da Williams no auge tecnológico da suspensão ativa." }
+  ],
+  "1993_williams_renault": [
+    { name: "Damon Hill", country: "Reino Unido 🇬🇧", titles: 1, wins: 22, podiums: 42, poles: 20, rating_offset: -4, description: "Herdeiro talentoso britânico que conquistou suas primeiras vitórias sob a tutela de Prost." }
+  ],
+  "1994_benetton_ford": [
+    { name: "Jos Verstappen", country: "Holanda 🇳🇱", titles: 0, wins: 0, podiums: 2, poles: 0, rating_offset: -7, description: "Inexperiente holandês, pai do futuro campeão Max, que encarou a mítica Benetton de 1994." },
+    { name: "JJ Lehto", country: "Finlândia 🇫🇮", titles: 0, wins: 0, podiums: 1, poles: 0, rating_offset: -8, description: "Iniciou o ano como piloto titular da Benetton, mas sofreu uma grave lesão na pré-temporada." },
+    { name: "Johnny Herbert", country: "Reino Unido 🇬🇧", titles: 0, wins: 3, podiums: 7, poles: 0, rating_offset: -5, description: "Contratado para as últimas provas para guiar o difícil carro azul-celeste." }
+  ],
+  "1995_benetton_renault": [
+    { name: "Johnny Herbert", country: "Reino Unido 🇬🇧", titles: 0, wins: 3, podiums: 7, poles: 0, rating_offset: -4, description: "Conquistou vitórias heroicas em Silverstone e Monza para sacramentar o mundial de construtores." }
+  ],
+  "1996_williams_renault": [
+    { name: "Jacques Villeneuve", country: "Canadá 🇨🇦", titles: 1, wins: 11, podiums: 23, poles: 13, rating_offset: -2, description: "Estreante ousado vindo da IndyCar, travou batalha espetacular com Damon Hill até a prova final." }
+  ],
+  "1997_williams_renault": [
+    { name: "Heinz-Harald Frentzen", country: "Alemanha 🇩🇪", titles: 0, wins: 3, podiums: 18, poles: 2, rating_offset: -4, description: "Piloto extremamente suave, conquistou o GP de Ímola de 1997 com maestria." }
+  ],
+  "1998_mclaren_mercedes": [
+    { name: "David Coulthard", country: "Reino Unido 🇬🇧", titles: 0, wins: 13, podiums: 62, poles: 12, rating_offset: -3, description: "Escudeiro de luxo da McLaren, taticamente leal na lendária dobradinha prateada." }
+  ],
+  "1999_mclaren_mercedes": [
+    { name: "David Coulthard", country: "Reino Unido 🇬🇧", titles: 0, wins: 13, podiums: 62, poles: 12, rating_offset: -3, description: "Segurou as pontas da equipe prateada após as difíceis quebras mecânicas enfrentadas por Häkkinen." }
+  ],
+  "2000_ferrari": [
+    { name: "Rubens Barrichello", country: "Brasil 🇧🇷", titles: 0, wins: 11, podiums: 68, poles: 14, rating_offset: -3, description: "Rubinho. Conquistou sua lendária primeira vitória chorada na chuva da Alemanha em Hockenheim." }
+  ],
+  "2001_ferrari": [
+    { name: "Rubens Barrichello", country: "Brasil 🇧🇷", titles: 0, wins: 11, podiums: 68, poles: 14, rating_offset: -3, description: "Auxiliou a Scuderia a pavimentar o domínio estrondoso da Ferrari na virada do milênio." }
+  ],
+  "2002_ferrari": [
+    { name: "Rubens Barrichello", country: "Brasil 🇧🇷", titles: 0, wins: 11, podiums: 68, poles: 14, rating_offset: -2, description: "Vice-campeão merecido pilotando o icônico e invencível chassi F2002." }
+  ],
+  "2003_ferrari": [
+    { name: "Rubens Barrichello", country: "Brasil 🇧🇷", titles: 0, wins: 11, podiums: 68, poles: 14, rating_offset: -3, description: "Venceu GPs chaves que garantiram a histórica reação de Schumacher contra Raikkonen." }
+  ],
+  "2005_renault": [
+    { name: "Giancarlo Fisichella", country: "Itália 🇮🇹", titles: 0, wins: 3, podiums: 19, poles: 4, rating_offset: -4, description: "Venceu a prova de abertura em Melbourne com o veloz carro azul-amarelo." }
+  ],
+  "2006_renault": [
+    { name: "Giancarlo Fisichella", country: "Itália 🇮🇹", titles: 0, wins: 3, podiums: 19, poles: 4, rating_offset: -3, description: "Garantor do bicampeonato de construtores da escuderia de Enstone." }
+  ],
+  "2007_ferrari": [
+    { name: "Felipe Massa", country: "Brasil 🇧🇷", titles: 0, wins: 11, podiums: 41, poles: 16, rating_offset: -2, description: "O \'Filipinho\'. Dominador de Interlagos, foi magnânimo ao ceder a vitória decisiva a Räikkönen." }
+  ],
+  "2008_mclaren": [
+    { name: "Heikki Kovalainen", country: "Finlândia 🇫🇮", titles: 0, wins: 1, podiums: 4, poles: 1, rating_offset: -5, description: "Venceu o GP da Hungria de 2008 de forma brilhante com a flecha de prata." }
+  ],
+  "2010_red_bull": [
+    { name: "Mark Webber", country: "Austrália 🇦🇺", titles: 0, wins: 9, podiums: 42, poles: 13, rating_offset: -1, description: "Disputou ferozmente o título do ano de 2010 com Vettel, vivendo intriga acalorada." }
+  ],
+  "2011_red_bull": [
+    { name: "Mark Webber", country: "Austrália 🇦🇺", titles: 0, wins: 9, podiums: 42, poles: 13, rating_offset: -3, description: "Ofereceu apoio confiável ao domínio absoluto de Vettel no bicampeonato da Red Bull." }
+  ],
+  "2013_red_bull": [
+    { name: "Mark Webber", country: "Austrália 🇦🇺", titles: 0, wins: 9, podiums: 42, poles: 13, rating_offset: -3, description: "O veterano australiano em seu último ano na categoria, eternizado pelo drama Multi-21." }
+  ],
+  "2014_mercedes": [
+    { name: "Nico Rosberg", country: "Alemanha 🇩🇪", titles: 1, wins: 23, podiums: 57, poles: 30, rating_offset: -1, description: "Travou duelo histórico com Hamilton na famosa \'Batalha do Bahrein\' no ano de introdução dos híbridos." }
+  ],
+  "2015_mercedes": [
+    { name: "Nico Rosberg", country: "Alemanha 🇩🇪", titles: 1, wins: 23, podiums: 57, poles: 30, rating_offset: -1, description: "Bateu de frente com Hamilton no vice-campeonato antes do épico ano seguinte." }
+  ],
+  "2016_mercedes": [
+    { name: "Lewis Hamilton", country: "Reino Unido 🇬🇧", titles: 7, wins: 103, podiums: 197, poles: 104, rating_offset: 1, description: "Arquirrival e companheiro de Rosberg. Perdeu o campeonato por apenas 5 pontos após tensão total em Abu Dhabi." }
+  ],
+  "2017_mercedes": [
+    { name: "Valtteri Bottas", country: "Finlândia 🇫🇮", titles: 0, wins: 10, podiums: 67, poles: 20, rating_offset: -3, description: "Substituiu Rosberg às pressas, trazendo vitórias sólidas para blindar a Mercedes." }
+  ],
+  "2018_mercedes": [
+    { name: "Valtteri Bottas", country: "Finlândia 🇫🇮", titles: 0, wins: 10, podiums: 67, poles: 20, rating_offset: -3, description: "Parceiro estratégico que jogou pelo coletivo para a Mercedes vencer os construtores." }
+  ],
+  "2020_mercedes": [
+    { name: "Valtteri Bottas", country: "Finlândia 🇫🇮", titles: 0, wins: 10, podiums: 67, poles: 20, rating_offset: -3, description: "Segunda força confiável na temporada mais dominante da era moderna alemã." }
+  ],
+  "2022_red_bull": [
+    { name: "Sergio Pérez", country: "México 🇲🇽", titles: 0, wins: 6, podiums: 39, poles: 3, rating_offset: -4, description: "O \'Ministro da Defesa\'. Veloz em circuitos de rua e escudeiro leal do império austríaco." }
+  ],
+  "2024_red_bull": [
+    { name: "Sergio Pérez", country: "México 🇲🇽", titles: 0, wins: 6, podiums: 39, poles: 3, rating_offset: -5, description: "Encarou dificuldades mas seguiu como pilar da equipe austríaca na corrida técnica de 2024." }
+  ],
+  "2025_mclaren": [
+    { name: "Lando Norris", country: "Reino Unido 🇬🇧", titles: 0, wins: 3, podiums: 25, poles: 8, rating_offset: 0, description: "Estrela rápida britânica da McLaren, rivalizando em igualdade com Oscar Piastri." }
+  ],
+  "2026_audi": [
+    { name: "Nico Hülkenberg", country: "Alemanha 🇩🇪", titles: 0, wins: 0, podiums: 0, poles: 1, rating_offset: -2, description: "O \'Hulk\'. Veterano alemão conhecido por sua velocidade em classificação, contratado pela Audi." },
+    { name: "Mick Schumacher", country: "Alemanha 🇩🇪", titles: 0, wins: 0, podiums: 0, poles: 0, rating_offset: -8, description: "Piloto reserva de peso carregando o nome mais lendário da história da categoria." }
+  ]
+};
+
+interface StaffRecord {
+  person_id: string;
+  nome: string;
+  nacionalidade: string;
+  role_normalized: 'team_principal' | 'technical_director' | 'chief_designer' | 'chief_engineer' | 'strategy_lead';
+  role_display: string;
+  equipe_id: string;
+  equipe_nome: string;
+  ano: number;
+  overall: number;
+  legacy_tier: string;
+  observacao: string;
+}
+
+const PRD_STAFF_RECORDS: StaffRecord[] = [
+  // Enzo Ferrari
+  { person_id: "p001", nome: "Enzo Ferrari", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1950, overall: 95, legacy_tier: "all_time_great", observacao: "Fundador lendário da Ferrari e referência histórica de liderança no paddock." },
+  { person_id: "p001", nome: "Enzo Ferrari", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1952, overall: 96, legacy_tier: "all_time_great", observacao: "Consolidação da Ferrari entre as grandes forças do automobilismo." },
+  { person_id: "p001", nome: "Enzo Ferrari", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1956, overall: 94, legacy_tier: "all_time_great", observacao: "Liderança inspiradora de Enzo Ferrari comandando a Scuderia." },
+  { person_id: "p001", nome: "Enzo Ferrari", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1961, overall: 97, legacy_tier: "all_time_great", observacao: "Período do glorioso chassi Sharknose sob rigorosa regência de Enzo." },
+  { person_id: "p001", nome: "Enzo Ferrari", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1975, overall: 93, legacy_tier: "all_time_great", observacao: "Legado duradouro reestabelecendo a mística vermelha com Niki Lauda." },
+
+  // Colin Chapman
+  { person_id: "p002", nome: "Colin Chapman", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_lotus", equipe_nome: "Lotus", ano: 1963, overall: 95, legacy_tier: "all_time_great", observacao: "Gênio influente da aerodinâmica e fundador obcecado do revolucionário Team Lotus." },
+  { person_id: "p002", nome: "Colin Chapman", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_lotus", equipe_nome: "Lotus", ano: 1965, overall: 96, legacy_tier: "all_time_great", observacao: "Época de imensa soberania técnica do Team Lotus com Jim Clark." },
+  { person_id: "p002", nome: "Colin Chapman", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_lotus", equipe_nome: "Lotus", ano: 1970, overall: 95, legacy_tier: "all_time_great", observacao: "Continuidade de liderança vanguardista em inovação aerodinâmica." },
+  { person_id: "p002", nome: "Colin Chapman", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_lotus", equipe_nome: "Lotus", ano: 1978, overall: 98, legacy_tier: "all_time_great", observacao: "Auge definitivo de inovação trazendo o conceito revolucionário de efeito solo." },
+
+  // Frank Williams
+  { person_id: "p003", nome: "Frank Williams", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1979, overall: 89, legacy_tier: "legend", observacao: "Ascensão impetuosa do clássico império Williams fundada e liderada por ele." },
+  { person_id: "p003", nome: "Frank Williams", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1980, overall: 94, legacy_tier: "legend", observacao: "Primeiro título mundial com Alan Jones, estabelecendo a Williams na elite." },
+  { person_id: "p003", nome: "Frank Williams", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1986, overall: 97, legacy_tier: "legend", observacao: "Garagem consolidada como força dominante em acirradas disputas internas." },
+  { person_id: "p003", nome: "Frank Williams", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1992, overall: 98, legacy_tier: "legend", observacao: "Auge absoluto da equipe com o indomável e tecnológico carro FW14B superativo." },
+  { person_id: "p003", nome: "Frank Williams", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal / Founder", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1996, overall: 98, legacy_tier: "legend", observacao: "Ciclo brilhante de vitórias sob o comando operacional impecável de Frank." },
+
+  // Ron Dennis
+  { person_id: "p004", nome: "Ron Dennis", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1984, overall: 95, legacy_tier: "legend", observacao: "Gerente ultra perfeccionista, unificou a McLaren estabelecendo a máquina vitoriosa moderna." },
+  { person_id: "p004", nome: "Ron Dennis", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1988, overall: 99, legacy_tier: "legend", observacao: "Temporada mítica de supremacia avassaladora com a dupla Ayrton Senna e Alain Prost." },
+  { person_id: "p004", nome: "Ron Dennis", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1991, overall: 97, legacy_tier: "legend", observacao: "Rigor máximo de engenharia e gestão tática mantendo a McLaren no topo esportivo." },
+  { person_id: "p004", nome: "Ron Dennis", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1998, overall: 96, legacy_tier: "legend", observacao: "Superação técnica magistral para trazer os títulos consagrados de Mika Häkkinen." },
+  { person_id: "p004", nome: "Ron Dennis", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 2008, overall: 93, legacy_tier: "legend", observacao: "Último grande título mundial conquistado por pilotos de sua dinastia com Hamilton." },
+
+  // Jean Todt
+  { person_id: "p005", nome: "Jean Todt", nacionalidade: "FRA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1994, overall: 88, legacy_tier: "elite", observacao: "Início da histórica reestruturação militarista de Maranello pós-Crise." },
+  { person_id: "p005", nome: "Jean Todt", nacionalidade: "FRA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2000, overall: 96, legacy_tier: "elite", observacao: "Scuderia transformada em poderosa máquina de vitórias com Michael Schumacher." },
+  { person_id: "p005", nome: "Jean Todt", nacionalidade: "FRA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2002, overall: 98, legacy_tier: "elite", observacao: "Auge monumental de eficiência esportiva, logística e trabalho de mureta vermelha." },
+  { person_id: "p005", nome: "Jean Todt", nacionalidade: "FRA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2004, overall: 99, legacy_tier: "elite", observacao: "Pontuação recorde absoluta na mítica e invencível era de ouro Schumacher-Todt-Brawn." },
+
+  // Flavio Briatore
+  { person_id: "p006", nome: "Flavio Briatore", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_benetton", equipe_nome: "Benetton", ano: 1994, overall: 92, legacy_tier: "great", observacao: "Gestão esportiva de enorme agressividade e faro comercial campeã com Schumacher." },
+  { person_id: "p006", nome: "Flavio Briatore", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_benetton", equipe_nome: "Benetton", ano: 1995, overall: 95, legacy_tier: "great", observacao: "Temporada estelar de duplo campeonato coroando a estrutura de Enstone." },
+  { person_id: "p006", nome: "Flavio Briatore", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_renault", equipe_nome: "Renault", ano: 2005, overall: 95, legacy_tier: "great", observacao: "Trabalho impecável de suporte a Fernando Alonso destronando a toda-poderosa Ferrari." },
+  { person_id: "p006", nome: "Flavio Briatore", nacionalidade: "ITA", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_renault", equipe_nome: "Renault", ano: 2006, overall: 95, legacy_tier: "great", observacao: "Bicampeonato marcante focado em táticas inovadoras de pit stop." },
+
+  // Christian Horner
+  { person_id: "p007", nome: "Christian Horner", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2010, overall: 95, legacy_tier: "elite", observacao: "Primeiro título estelar de construtores da Red Bull erguendo um novo império na F1." },
+  { person_id: "p007", nome: "Christian Horner", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2011, overall: 97, legacy_tier: "elite", observacao: "Conduziu a garagem austríaca a uma extraordinária e soberana temporada com Vettel." },
+  { person_id: "p007", nome: "Christian Horner", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2013, overall: 98, legacy_tier: "elite", observacao: "Fechamento impecável do ciclo do tetracampeonato em pleno domínio político-desportivo." },
+  { person_id: "p007", nome: "Christian Horner", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2022, overall: 97, legacy_tier: "elite", observacao: "Soberba adaptação ao regulamento de efeito solo, restabelecendo o time no topo." },
+  { person_id: "p007", nome: "Christian Horner", nacionalidade: "GBR", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2023, overall: 99, legacy_tier: "elite", observacao: "Ano estatisticamente mais esmagador da história, liderado com maestria operacional." },
+
+  // Toto Wolff
+  { person_id: "p008", nome: "Toto Wolff", nacionalidade: "AUT", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2014, overall: 97, legacy_tier: "legend", observacao: "Início triunfal da mais assustadora e consistente dinastia vitoriosa na era híbrida." },
+  { person_id: "p008", nome: "Toto Wolff", nacionalidade: "AUT", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2016, overall: 99, legacy_tier: "legend", observacao: "Gerenciamento implacável da monumental guerra interna entre Hamilton e Rosberg." },
+  { person_id: "p008", nome: "Toto Wolff", nacionalidade: "AUT", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2019, overall: 99, legacy_tier: "legend", observacao: "Rigor fabril supremo atingindo níveis inacreditáveis de constância operacional e vitórias." },
+  { person_id: "p008", nome: "Toto Wolff", nacionalidade: "AUT", role_normalized: "team_principal", role_display: "Team Principal", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2020, overall: 99, legacy_tier: "legend", observacao: "Consagração absoluta com a Mercedes preta, faturando o heptacampeonato consecutivo." },
+
+  // Adrian Newey
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "chief_designer", role_display: "Chief Designer", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1991, overall: 88, legacy_tier: "legend", observacao: "Início do traçado de bólidos de Williams com suspensão revolucionária." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "chief_designer", role_display: "Chief Designer", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1992, overall: 94, legacy_tier: "legend", observacao: "Concebeu o bólido de suspensão ativa e eletrônica FW14B, devastador das pistas." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "chief_designer", role_display: "Chief Designer", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1993, overall: 95, legacy_tier: "legend", observacao: "Extraordinária inteligência refinando fluxos sob o regulamento eletrônico." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "chief_designer", role_display: "Chief Designer", equipe_id: "t_williams", equipe_nome: "Williams", ano: 1996, overall: 95, legacy_tier: "legend", observacao: "Mais um chassi primoroso equilibrado aerodinamicamente de Newey campeão absoluto." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1998, overall: 93, legacy_tier: "legend", observacao: "Arquiteto das aerodinâmicas flechas de prata prateadas e campeãs de Mika Häkkinen." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1999, overall: 93, legacy_tier: "legend", observacao: "Equilíbrio de chassi e fluxos impecáveis de downforce na mítica flecha de prata." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2010, overall: 97, legacy_tier: "legend", observacao: "Iniciou desenhando asas dianteiras flexíveis e fluxos inovadores na Red Bull." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2011, overall: 98, legacy_tier: "legend", observacao: "Concebeu o genial difusor soprado que domou as derrapagens traseiras de Sebastian Vettel." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2013, overall: 98, legacy_tier: "legend", observacao: "Auge aerodinâmico e canalização de venturi garantindo ampla supremacia." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2022, overall: 98, legacy_tier: "legend", observacao: "Mestre supremo da geometria de canais sob efeito solo, erradicando os saltos crônicos." },
+  { person_id: "p009", nome: "Adrian Newey", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2023, overall: 99, legacy_tier: "legend", observacao: "A obra-prima aerodinâmica definitiva: arrasto nulo com o flap da asa aberto e downforce infinito." },
+
+  // James Allison
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "chief_engineer", role_display: "Head of Aerodynamics", equipe_id: "t_benetton", equipe_nome: "Benetton", ano: 1994, overall: 83, legacy_tier: "great", observacao: "Desenvolvimento aerodinâmico chave do ágil bólido bicolor de Schumacher." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "chief_engineer", role_display: "Head of Aerodynamics", equipe_id: "t_benetton", equipe_nome: "Benetton", ano: 1995, overall: 86, legacy_tier: "great", observacao: "Participação em aerodinâmica otimizada de Enstone no duplo título campeão." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "chief_engineer", role_display: "Trackside Aerodynamicist", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2000, overall: 88, legacy_tier: "great", observacao: "Integrado ao formidável painel técnico de suporte aerodinâmico em Maranello." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "chief_engineer", role_display: "Trackside Aerodynamicist", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2004, overall: 91, legacy_tier: "great", observacao: "Auxiliou no cálculo de downforce excepcional do imbatível bólido F2004." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_renault", equipe_nome: "Renault", ano: 2009, overall: 89, legacy_tier: "elite", observacao: "Assumiu a liderança de engenharia emEnstone desenvolvendo suspensões compactas." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 2015, overall: 90, legacy_tier: "elite", observacao: "Diretor técnico encarregado de revitalizar os bicos e suspensão dianteira da Scuderia." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2017, overall: 94, legacy_tier: "elite", observacao: "Líder de chassi da Mercedes, moldando as flechas a responder as complexidades de pneus." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2019, overall: 96, legacy_tier: "elite", observacao: "Engenheiro de mestre-chave responsável pelo brilhante e inovador sistema DAS." },
+  { person_id: "p010", nome: "James Allison", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2020, overall: 96, legacy_tier: "elite", observacao: "Estruturou o maravilhoso chassi W11, considerado o carro mais veloz da F1 moderna." },
+
+  // Paddy Lowe
+  { person_id: "p011", nome: "Paddy Lowe", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 1998, overall: 87, legacy_tier: "elite", observacao: "Liderou desenvolvimento dinâmico e suspensão ativa chave dos anos de glória da McLaren." },
+  { person_id: "p011", nome: "Paddy Lowe", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mclaren", equipe_nome: "McLaren", ano: 2008, overall: 90, legacy_tier: "elite", observacao: "Desenvolveu o chassi campeão de Hamilton com suspensão traseira rígida." },
+  { person_id: "p011", nome: "Paddy Lowe", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2014, overall: 95, legacy_tier: "elite", observacao: "Supervisão cirúrgica de engenharia integrada no início da máquina recordista alemã." },
+  { person_id: "p011", nome: "Paddy Lowe", nacionalidade: "GBR", role_normalized: "technical_director", role_display: "Technical Director", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2016, overall: 96, legacy_tier: "elite", observacao: "Estabilidade mecânica extrema e inovações de freio no domínio estelar híbrido." },
+
+  // James Vowles
+  { person_id: "p012", nome: "James Vowles", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_brawn", equipe_nome: "Brawn GP", ano: 2009, overall: 88, legacy_tier: "elite", observacao: "Coordenador tático audaz que organizou paradas cruciais de Button na improvável conquista." },
+  { person_id: "p012", nome: "James Vowles", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2014, overall: 94, legacy_tier: "elite", observacao: "Engenhosas chamadas táticas preventivas neutralizando undercuts de oponentes." },
+  { person_id: "p012", nome: "James Vowles", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2016, overall: 96, legacy_tier: "elite", observacao: "O cérebro tático que gerenciava as rotas de mureta com agressão e frieza cirúrgica." },
+  { person_id: "p012", nome: "James Vowles", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_mercedes", equipe_nome: "Mercedes", ano: 2019, overall: 97, legacy_tier: "elite", observacao: "Domínio de simulações em tempo real mantendo a mureta infalível a safety-cars." },
+
+  // Hannah Schmitz
+  { person_id: "p013", nome: "Hannah Schmitz", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Head of Race Strategy", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2019, overall: 86, legacy_tier: "great", observacao: "Destaque nas tomadas de decisão sob o caos de asfalto molhado em Interlagos." },
+  { person_id: "p013", nome: "Hannah Schmitz", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Head of Race Strategy", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2021, overall: 91, legacy_tier: "elite", observacao: "Pitstops em janelas perfeitas para travar taticamente o império da Mercedes." },
+  { person_id: "p013", nome: "Hannah Schmitz", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Head of Race Strategy", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2022, overall: 93, legacy_tier: "elite", observacao: "Lenda do pit-wall. Chamadas brilhantes de pneus falsos induzindo adversários ao erro em Mônaco e Hungria." },
+  { person_id: "p013", nome: "Hannah Schmitz", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Head of Race Strategy", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2023, overall: 95, legacy_tier: "elite", observacao: "Leitura cirúrgica em rádio impecável guiando a Red Bull na maior sequência vitoriosa." },
+
+  // Neil Martin
+  { person_id: "p014", nome: "Neil Martin", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2007, overall: 85, legacy_tier: "great", observacao: "Inovou na infraestrutura de softwares proprietários de simulação estatística." },
+  { person_id: "p014", nome: "Neil Martin", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2010, overall: 90, legacy_tier: "great", observacao: "Simulações precisas de tráfego que renderam o primeiro título mundial de Vettel." },
+  { person_id: "p014", nome: "Neil Martin", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Chief Strategist", equipe_id: "t_redbull", equipe_nome: "Red Bull Racing", ano: 2011, overall: 91, legacy_tier: "great", observacao: "Dominância nas chamadas rápidas antevendo comportamento dinâmico de pneus Pirelli." },
+
+  // Ruth Buscombe
+  { person_id: "p015", nome: "Ruth Buscombe", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Strategy Engineer", equipe_id: "t_sauber", equipe_nome: "Sauber", ano: 2016, overall: 82, legacy_tier: "solid", observacao: "Incríveis leituras de pit stops que deram pontos de ouro vitais à Sauber." },
+  { person_id: "p015", nome: "Ruth Buscombe", nacionalidade: "GBR", role_normalized: "strategy_lead", role_display: "Strategy Engineer", equipe_id: "t_alfa_romeo", equipe_nome: "Alfa Romeo", ano: 2018, overall: 84, legacy_tier: "solid", observacao: "Operadora destacada na mureta suíça, famosa pela agilidade em asfalto instável." },
+
+  // Mauro Forghieri
+  { person_id: "p016", nome: "Mauro Forghieri", nacionalidade: "ITA", role_normalized: "chief_designer", role_display: "Technical Leader / Designer", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1964, overall: 91, legacy_tier: "all_time_great", observacao: "Superprojetista de Maranello, desenhou o motor lendário do título de John Surtees." },
+  { person_id: "p016", nome: "Mauro Forghieri", nacionalidade: "ITA", role_normalized: "chief_designer", role_display: "Technical Leader / Designer", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1975, overall: 96, legacy_tier: "all_time_great", observacao: "Arquiteta do revolucionário câmbio transversal na clássica série campeã 312T." },
+  { person_id: "p016", nome: "Mauro Forghieri", nacionalidade: "ITA", role_normalized: "chief_designer", role_display: "Technical Leader / Designer", equipe_id: "t_ferrari", equipe_nome: "Ferrari", ano: 1977, overall: 95, legacy_tier: "all_time_great", observacao: "Mito dos boxes vermelhos comandando chassis e mecânica com perfeição pura." }
+];
+
+const mapRoleType = (role: string): 'boss' | 'engineer' | 'strategist' => {
+  if (role === 'team_principal') return 'boss';
+  if (role === 'strategy_lead') return 'strategist';
+  return 'engineer';
+};
+
+const mapNacionalidade = (nac: string): string => {
+  const n = nac.toUpperCase();
+  if (n === 'ITA') return 'Itália 🇮🇹';
+  if (n === 'GBR') return 'Reino Unido 🇬🇧';
+  if (n === 'FRA') return 'França 🇫🇷';
+  if (n === 'AUT') return 'Áustria 🇦🇹';
+  if (n === 'GER' || n === 'DEU') return 'Alemanha 🇩🇪';
+  if (n === 'BRA') return 'Brasil 🇧🇷';
+  if (n === 'USA') return 'Estados Unidos 🇺🇸';
+  if (n === 'SUI') return 'Suíça 🇨🇭';
+  if (n === 'NZL') return 'Nova Zelândia 🇳🇿';
+  if (n === 'AUS') return 'Austrália 🇦🇺';
+  if (n === 'FIN') return 'Finlândia 🇫🇮';
+  if (n === 'MEX') return 'México 🇲🇽';
+  if (n === 'ESP') return 'Espanha 🇪🇸';
+  if (n === 'ARG') return 'Argentina 🇦🇷';
+  if (n === 'IND') return 'Índia 🇮🇳';
+  if (n === 'ROM') return 'Romênia 🇷🇴';
+  return 'Mundo 🌐';
+};
+
+const getDefaultDesc = (nome: string, team: string, season: number, role: 'boss' | 'engineer' | 'strategist') => {
+  if (role === 'boss') return `${nome}, diretor de equipe que organizou processos operacionais e de paddock para a escuderia ${team} em ${season}.`;
+  if (role === 'engineer') return `${nome}, diretor técnico e designer responsável por equilibrar a aerodinâmica e o comportamento mecânico da equipe ${team} em ${season}.`;
+  return `${nome}, mestre tático calibrando simulações de pit-wall precisas para a equipe ${team} em ${season}.`;
+};
+
+const isTeamMatch = (recTeam: string, queryTeam: string) => {
+  const normRec = recTeam.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return queryTeam.includes(normRec) || normRec.includes(queryTeam) ||
+         (queryTeam.includes('redbull') && normRec.includes('redbull')) ||
+         (queryTeam.includes('mclaren') && normRec.includes('mclaren')) ||
+         (queryTeam.includes('ferrari') && normRec.includes('ferrari')) ||
+         (queryTeam.includes('williams') && normRec.includes('williams')) ||
+         (queryTeam.includes('renault') && normRec.includes('renault')) ||
+         (queryTeam.includes('benetton') && normRec.includes('benetton')) ||
+         (queryTeam.includes('mercedes') && normRec.includes('mercedes')) ||
+         (queryTeam.includes('lotus') && normRec.includes('lotus')) ||
+         (queryTeam.includes('sauber') && normRec.includes('sauber')) ||
+         (queryTeam.includes('alfa') && normRec.includes('alfa'));
+};
+
+const getBackupStaff = (teamName: string, season: number, role: 'boss' | 'engineer' | 'strategist', avgRating: number) => {
+  const t = teamName.toLowerCase();
+  
+  if (t.includes('ferrari')) {
+    if (role === 'boss') {
+      if (season <= 1977) return { name: "Enzo Ferrari", country: "Itália 🇮🇹", description: "O comendador supremo de Maranello. Sua mística impunha respeito absoluto no paddock." };
+      if (season <= 1988) return { name: "Marco Piccinini", country: "Itália 🇮🇹", description: "Liderou a Scuderia nos históricos anos de glórias de Scheckter e Villeneuve." };
+      if (season <= 1992) return { name: "Cesare Fiorio", country: "Itália 🇮🇹", description: "Diretor esportivo lendário, coordenador tático da rivalidade Prost-Senna na Ferrari." };
+      if (season <= 2007) return { name: "Jean Todt", country: "França 🇫🇷", description: "Comandante supremo da mítica era Schumacher; blindou Maranello contra qualquer pressão esportiva." };
+      if (season <= 2014) return { name: "Stefano Domenicali", country: "Itália 🇮🇹", description: "Chefe respeitado pela diplomacia e gestão de pilotos nas disputas acirradas de Fernando Alonso." };
+      return { name: "Frédéric Vasseur", country: "França 🇫🇷", description: "Líder direto e pragmático focado em reestruturação operacional e atração de superestrelas." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1961) return { name: "Carlo Chiti", country: "Itália 🇮🇹", description: "Gênio do chassi de motor traseiro 'Sharknose' campeão de 1961." };
+      if (season <= 1984) return { name: "Mauro Forghieri", country: "Itália 🇮🇹", description: "Mente brilhante que desenhou o extraordinário motor boxer flat-12 e chassis campeões dos anos 70." };
+      if (season <= 1995) return { name: "John Barnard", country: "Reino Unido 🇬🇧", description: "Inovador revolucionário que concebeu o pioneiro câmbio semiautomático com borboleta no volante da F1." };
+      if (season <= 2006) return { name: "Rory Byrne", country: "África do Sul 🇿🇦", description: "Mestre sul-africano do design. Elaborou carros brilhantes de perfeita aderência e equilíbrio dinâmico." };
+      if (season <= 2013) return { name: "Aldo Costa", country: "Itália 🇮🇹", description: "Projetista astuto de Maranello, responsável técnico pelos bólidos campeões de 2007 e 2008." };
+      return { name: "James Allison", country: "Reino Unido 🇬🇧", description: "Diretor técnico renomado, restaurou a eficácia aerodinâmica e equilíbrio de potência das mulas vermelhas." };
+    }
+    if (role === 'strategist') {
+      if (season <= 1996) return { name: "Luca Baldisserri", country: "Itália 🇮🇹", description: "Veterano engenheiro de pista, ágil mestre de cronometragem clássico de Maranello." };
+      if (season <= 2006) return { name: "Ross Brawn", country: "Reino Unido 🇬🇧", description: "Gênio absoluto do pit wall. Chamadas audaciosas de paradas múltiplas que venciam corridas impossíveis." };
+      if (season <= 2010) return { name: "Chris Dyer", country: "Austrália 🇦🇺", description: "Engenheiro de estratégia responsável pelas táticas cirúrgicas de título de Kimi Räikkönen em 2007." };
+      if (season <= 2022) return { name: "Iñaki Rueda", country: "Espanha 🇪🇸", description: "Coordenador técnico de pit wall responsável por simulações táticas em corridas complexas de safety-car." };
+      return { name: "Ravin Jain", country: "Reino Unido 🇬🇧", description: "Promissor estrategista-chefe britânico impulsionado para simplificar e dar lógica estatística fria aos boxes vermelhos." };
+    }
+  }
+
+  if (t.includes('mclaren')) {
+    if (role === 'boss') {
+      if (season <= 1970) return { name: "Bruce McLaren", country: "Nova Zelândia 🇳🇿", description: "Fundador herói, cujo espírito e garra moldaram para sempre o DNA vencedor e indomável da escuderia." };
+      if (season <= 1980) return { name: "Teddy Mayer", country: "Estados Unidos 🇺🇸", description: "Dirigiu a McLaren faturando os memoráveis títulos mundiais de Fittipaldi (1974) e James Hunt (1976)." };
+      if (season <= 2008) return { name: "Ron Dennis", country: "Reino Unido 🇬🇧", description: "Líder lendário obcecado pelo perfeccionismo. Concebeu os anos dourados e dominantes de Senna e Prost." };
+      if (season <= 2013) return { name: "Martin Whitmarsh", country: "Reino Unido 🇬🇧", description: "Gerenciou a transição pós-Dennis mantendo a equipe no epicentro das vitórias no grid." };
+      if (season <= 2018) return { name: "Eric Boullier", country: "França 🇫🇷", description: "Assumiu as decisões desportivas da tradicional equipe britânica em uma fase técnica desafiadora." };
+      return { name: "Andrea Stella", country: "Itália 🇮🇹", description: "Líder de mureta brilhante e humilde, reestruturou a McLaren transformando o chassi em um canhão campeão." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1980) return { name: "Gordon Coppuck", country: "Reino Unido 🇬🇧", description: "Projetou o clássico monoplaza M23, referência absoluta de robustez mecânica na década de 70." };
+      if (season <= 1987) return { name: "John Barnard", country: "Reino Unido 🇬🇧", description: "Pioneiro absoluto ao revolucionar a indústria introduzindo chassi monocoque inteiramente de fibra de carbono." };
+      if (season <= 1996) return { name: "Neil Oatley", country: "Reino Unido 🇬🇧", description: "Mestre refinado, desenhou os lendários e ágeis bólidos vencedores de múltiplos campeonatos da McLaren." };
+      if (season <= 2005) return { name: "Adrian Newey", country: "Reino Unido 🇬🇧", description: "Diretor aerodinâmico mestre que concebeu as ágeis flechas de prata campeãs de Mika Häkkinen." };
+      if (season <= 2013) return { name: "Paddy Lowe", country: "Reino Unido 🇬🇧", description: "Gerenciou inovações de suspensão e rigidez torcional crucial para a conquista de Lewis Hamilton em 2008." };
+      return { name: "Rob Marshall", country: "Reino Unido 🇬🇧", description: "Ex-mago da Red Bull contratado pela McLaren; arquiteto dinâmico central da escalada aerodinâmica recente." };
+    }
+    if (role === 'strategist') {
+      if (season <= 1997) return { name: "Tyler Alexander", country: "Estados Unidos 🇺🇸", description: "Lenda operacional da McLaren clássica, cofundador cujo rigor de cronômetro imperava nos boxes." };
+      if (season <= 2008) return { name: "Paddy Lowe", country: "Reino Unido 🇬🇧", description: "Coordenou mureta técnica com simulações estatísticas em tempo real na era prateada." };
+      return { name: "Randy Singh", country: "Reino Unido 🇬🇧", description: "Diretor tático de alto nível conhecido por focar em undercuts cirúrgicos e excelente modelagem matemática." };
+    }
+  }
+
+  if (t.includes('mercedes')) {
+    if (role === 'boss') {
+      if (season <= 2013) return { name: "Ross Brawn", country: "Reino Unido 🇬🇧", description: "Lenda dos boxes, comprou a equipe e estruturou os pilares modernos e fabris da escuderia alemã." };
+      return { name: "Toto Wolff", country: "Áustria 🇦🇹", description: "Líder e acionista vitorioso da Mercedes, conquistou imponentes 8 títulos de construtores recordistas na F1." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2013) return { name: "Aldo Costa", country: "Itália 🇮🇹", description: "Projetista-chefe italiano, alinhou as suspensões e chassis que definiriam a hegemonia de 2014." };
+      if (season <= 2016) return { name: "Paddy Lowe", country: "Reino Unido 🇬🇧", description: "Gerenciou as inovações mecânicas integradas à formidável unidade de potência híbrida alemã." };
+      return { name: "James Allison", country: "Reino Unido 🇬🇧", description: "Líder técnico absoluto das flechas de prata, garantindo extraordinária downforce e comportamento de pneus." };
+    }
+    if (role === 'strategist') {
+      if (season <= 2022) return { name: "James Vowles", country: "Reino Unido 🇬🇧", description: "Estrategista de elite, famoso pela frieza operacional em disputas táticas brutas de pista." };
+      return { name: "Rosie Wait", country: "Reino Unido 🇬🇧", description: "Supervisora estatística brilhante de corrida, dita as rotas táticas das flechas de prata contemporâneas." };
+    }
+  }
+
+  if (t.includes('red bull') || t.includes('redbull')) {
+    if (role === 'boss') {
+      return { name: "Christian Horner", country: "Reino Unido 🇬🇧", description: "Dirigiu a Red Bull com pulso firme e ironia sagaz, guiando a equipe de estreante a potência vencedora eterna." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2023) return { name: "Adrian Newey", country: "Reino Unido 🇬🇧", description: "O maior projetista da história. Mago absoluto na canalização de efeito solo e fluxos de ar limpos." };
+      return { name: "Pierre Waché", country: "França 🇫🇷", description: "Diretor de engenharia pragmático, pilota o desenho mecânico e suspensões modernas da Red Bull." };
+    }
+    if (role === 'strategist') {
+      if (season <= 2009) return { name: "Neil Martin", country: "Reino Unido 🇬🇧", description: "Inovador pioneiro na modelagem preditiva de tráfego de pit wall na Fórmula 1 moderna." };
+      if (season <= 2018) return { name: "Will Courtenay", country: "Reino Unido 🇬🇧", description: "Chefe de estratégia preciso, arquiteto de corrida das gloriosas conquistas de Sebastian Vettel." };
+      return { name: "Hannah Schmitz", country: "Reino Unido 🇬🇧", description: "Lenda viva da mureta Red Bull. Reações cerebrais perfeitas sob chuva espantando os rivais de surpresa." };
+    }
+  }
+
+  if (t.includes('williams')) {
+    if (role === 'boss') {
+      if (season <= 2012) return { name: "Frank Williams", country: "Reino Unido 🇬🇧", description: "O lendário guerreiro de garagem britânico. Construiu uma lenda mítica com brio e mecânica pura." };
+      if (season <= 2020) return { name: "Claire Williams", country: "Reino Unido 🇬🇧", description: "Assumiu a direção da equipe da família, lutando bravamente em períodos de dificuldades econômicas." };
+      if (season <= 2022) return { name: "Jost Capito", country: "Alemanha 🇩🇪", description: "Veterano gestor de automobilismo trazido para rejuvenescer a fundação administrativa do time." };
+      return { name: "James Vowles", country: "Reino Unido 🇬🇧", description: "Mente tática brilhante vinda da Mercedes, assume a gerência trazendo moderno e rigoroso processo técnico." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1990) return { name: "Patrick Head", country: "Reino Unido 🇬🇧", description: "Cofundador técnico lendário, impôs rigores de confiabilidade e inovação mecânica pioneira." };
+      if (season <= 1996) return { name: "Adrian Newey", country: "Reino Unido 🇬🇧", description: "Projetou os bólidos de Williams com eletrônica embarcada e suspensão ativa que devastaram o grid." };
+      if (season <= 2011) return { name: "Patrick Head", country: "Reino Unido 🇬🇧", description: "Diretor de engenharia experiente, segurou as pontas mecânicas da garagem britânica na era V8." };
+      if (season <= 2018) return { name: "Pat Symonds", country: "Reino Unido 🇬🇧", description: "Coordenou o desenvolvimento aerodinâmico eficiente em retas velozes nas campanhas V6 híbridas." };
+      return { name: "Pat Fry", country: "Reino Unido 🇬🇧", description: "Engenheiro prestigiado encarregado de reestruturar a aerodinâmica e refinamento de bicos da Williams." };
+    }
+    if (role === 'strategist') {
+      if (season <= 2013) return { name: "Dickie Stanford", country: "Reino Unido 🇬🇧", description: "Veterano engenheiro de rádio famoso nos anos áureos, conselheiro tático leal da equipe." };
+      if (season <= 2018) return { name: "Rob Smedley", country: "Reino Unido 🇬🇧", description: "Ex-engenheiro de pista de Massa na Ferrari, liderou decisões estratégicas nos boxes da Williams." };
+      return { name: "James Vowles", country: "Reino Unido 🇬🇧", description: "O próprio gerente de equipe que assume decisões cruciais de pit wall com rigor de dados puros." };
+    }
+  }
+
+  if (t.includes('renault') || t.includes('alpine')) {
+    if (role === 'boss') {
+      if (season <= 1984) return { name: "Gérard Larrousse", country: "França 🇫🇷", description: "Comandou a equipe francesa pioneira na revolução dos motores turbo de F1." };
+      if (season <= 2009) return { name: "Flavio Briatore", country: "Itália 🇮🇹", description: "Comandando com frieza comercial e agressividade de negócios nos bicampeonatos de Alonso." };
+      if (season <= 2013) return { name: "Éric Boullier", country: "França 🇫🇷", description: "Gerenciou a mureta da Lotus-Renault faturando belíssimas vitórias com Kimi Räikkönen." };
+      if (season <= 2021) return { name: "Cyril Abiteboul", country: "França 🇫🇷", description: "Ficou famoso pelo carisma e paixão ao capitanear a transição da equipe de fábrica da Renault." };
+      return { name: "Otmar Szafnauer", country: "Estados Unidos 🇺🇸", description: "Chefe operacional de pista consolidado, escalado para unificar a equipe francesa." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2008) return { name: "Bob Bell", country: "Reino Unido 🇬🇧", description: "Projetista genial, concebeu o vitorioso chassi com inovadores amortecedores de massa em 2005." };
+      if (season <= 2013) return { name: "James Allison", country: "Reino Unido 🇬🇧", description: "Diretor de engenharia, desenhou escapamentos inteligentes que redefiniram o downforce traseiro." };
+      return { name: "David Sanchez", country: "França 🇫🇷", description: "Engenheiro renomado focado em fluxos venturi e assoalhos aerodinâmicos na era de efeito solo." };
+    }
+    if (role === 'strategist') {
+      if (season <= 2009) return { name: "Pat Symonds", country: "Reino Unido 🇬🇧", description: "Estrategista de altíssimo escalão, mestre em gerenciar tanques extras leves nas largadas." };
+      return { name: "Alan Permane", country: "Reino Unido 🇬🇧", description: "Veterano tático encarregado de simplificar chamadas estatísticas sobre safety-cars." };
+    }
+  }
+
+  if (t.includes('benetton')) {
+    if (role === 'boss') {
+      if (season <= 1988) return { name: "Peter Collins", country: "Reino Unido 🇬🇧", description: "Liderou a Benetton em suas históricas primeiras vitórias com visual colorido." };
+      return { name: "Flavio Briatore", country: "Itália 🇮🇹", description: "Montou a indomável estrutura bicolor que rendeu os primeiros mundiais com Schumacher." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1991) return { name: "John Barnard", country: "Reino Unido 🇬🇧", description: "Inovador aerodinâmico que desenhou radiadores e bicos icônicos integrados." };
+      return { name: "Rory Byrne", country: "África do Sul 🇿🇦", description: "Desenhou bólidos ágeis com bico extremamente elevado, alterando o padrão geométrico da F1." };
+    }
+    if (role === 'strategist') {
+      return { name: "Pat Symonds", country: "Reino Unido 🇬🇧", description: "Mestre tático experiente de mureta nos anos áureos da Benetton bicolor." };
+    }
+  }
+
+  if (t.includes('lotus')) {
+    if (role === 'boss') {
+      if (season <= 1982) return { name: "Colin Chapman", country: "Reino Unido 🇬🇧", description: "Gênio lendário supremo da Lotus, cuja paixão por inovar dita a engenharia dos bólidos." };
+      return { name: "Peter Warr", country: "Reino Unido 🇬🇧", description: "Liderou a tradicional garagem preta e dourada de Ayrton Senna com pulso implacável." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1982) return { name: "Colin Chapman", country: "Reino Unido 🇬🇧", description: "Inovador sem limites que introduziu o efeito solo e bolds monocoque na F1." };
+      return { name: "Gérard Ducarouge", country: "França 🇫🇷", description: "Engenheiro renomado, concebeu chassis velozes sob medida para o motor Renault de Senna." };
+    }
+    if (role === 'strategist') {
+      return { name: "Peter Warr", country: "Reino Unido 🇬🇧", description: "Administrador e coordenador tático leal da prestigiosa garagem nos anos 80." };
+    }
+  }
+
+  if (t.includes('brabham')) {
+    if (role === 'boss') {
+      if (season <= 1969) return { name: "Jack Brabham", country: "Austrália 🇦🇺", description: "Liderou o paddock vencendo o campeonato mundial guiando seu próprio carro Brabham." };
+      return { name: "Bernie Ecclestone", country: "Reino Unido 🇬🇧", description: "Liderou a Brabham em uma época visionária com reabastecimentos de pista rápidos e asfalto quente." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1971) return { name: "Ron Tauranac", country: "Austrália 🇦🇺", description: "Desenhou chassis tubulares imbatíveis em robustez e adaptabilidade a pistas severas." };
+      return { name: "Gordon Murray", country: "África do Sul 🇿🇦", description: "Lenda do design, criou o lendário bólido com ventilador traseiro BT46B e bólidos compactos." };
+    }
+    if (role === 'strategist') {
+      return { name: "Herbie Blash", country: "Reino Unido 🇬🇧", description: "Lendário assessor tático de boxes de Bernie, controlando pitstops precisos de reabastecimento." };
+    }
+  }
+
+  if (t.includes('tyrrell')) {
+    if (role === 'boss') {
+      return { name: "Ken Tyrrell", country: "Reino Unido 🇬🇧", description: "Lendário 'Tio Ken'. Coordenador carismático e descobridor ferrenho de lendas na F1." };
+    }
+    if (role === 'engineer') {
+      if (season <= 1979) return { name: "Derek Gardner", country: "Reino Unido 🇬🇧", description: "Mente criativa brilhante que desenvolveu o lendário e ousado bólido de seis rodas P34." };
+      return { name: "Harvey Postlethwaite", country: "Reino Unido 🇬🇧", description: "Pioneiro da suspensão dianteira alta activa e downforces agudos frontais." };
+    }
+    if (role === 'strategist') {
+      return { name: "Ken Tyrrell", country: "Reino Unido 🇬🇧", description: "Comandante tático supremo de pista, conhecido pelo rádio estrondoso de autoridade nos boxes." };
+    }
+  }
+
+  if (t.includes('brawn')) {
+    if (role === 'boss') return { name: "Ross Brawn", country: "Reino Unido 🇬🇧", description: "Arquiteto genial da improvável ressurreição da equipe Honda faturando o duplo campeonato de 2009." };
+    if (role === 'engineer') return { name: "Loïc Bigois", country: "França 🇫🇷", description: "Gênio aerodinâmico que desenhou o famigerado e revolucionário difusor duplo campeão de 2009." };
+    if (role === 'strategist') return { name: "James Vowles", country: "Reino Unido 🇬🇧", description: "Aproveitou cada brecha estatística de pista garantindo vitórias consistentes a Jenson Button." };
+  }
+
+  if (t.includes('sauber') || t.includes('alfa romeo') || t.includes('audi')) {
+    if (role === 'boss') {
+      if (season <= 2005) return { name: "Peter Sauber", country: "Suíça 🇨🇭", description: "Fundador herói suíço responsável por integrar talentos e manter a equipe competitiva nos anos 90." };
+      if (season <= 2022) return { name: "Frédéric Vasseur", country: "França 🇫🇷", description: "Mente política excelente, integrou a marca Alfa Romeo garantindo aporte financeiro e técnico sólido." };
+      return { name: "Andreas Seidl", country: "Alemanha 🇩🇪", description: "Diretor geral conceituado focado em construir a ambiciosa transição técnica rumo ao time de fábrica Audi." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2015) return { name: "Willy Rampf", country: "Alemanha 🇩🇪", description: "Diretor técnico focado em chassis rígidos e excelente uso do túnel de vento de Hinwil." };
+      return { name: "James Key", country: "Reino Unido 🇬🇧", description: "Diretor técnico renomado encarregado de redesenhar os monoplazas suíços na era pós-híbrida." };
+    }
+    if (role === 'strategist') {
+      if (season >= 2016) return { name: "Ruth Buscombe", country: "Reino Unido 🇬🇧", description: "Estrategista de elite célebre por chamadas arrojadas em clima instável com pneus de seco." };
+      return { name: "Beat Zehnder", country: "Suíça 🇨🇭", description: "Gerente de boxe lendário operante desde os anos 90, com imenso conhecimento regulatório da FIA." };
+    }
+  }
+
+  if (t.includes('jordan')) {
+    if (role === 'boss') return { name: "Eddie Jordan", country: "Irlanda 🇮🇪", description: "O pitoresco e carismático irlandês, mestre do marketing e revelador do jovem Schumacher." };
+    if (role === 'engineer') return { name: "Gary Anderson", country: "Reino Unido 🇬🇧", description: "Projetista genial do inesquecível bólido verde Jordan 191, famoso pelo refino do chassi das curvas." };
+    if (role === 'strategist') return { name: "Richard Cregan", country: "Irlanda 🇮🇪", description: "Membro de box clássico que calibrou as brilhantes e rápidas tomadas de decisão na chuva de Spa 1998." };
+  }
+
+  if (t.includes('toro rosso') || t.includes('alphatauri') || t.includes('rb') || t.includes('minardi')) {
+    if (role === 'boss') {
+      if (season <= 2023) return { name: "Franz Tost", country: "Áustria 🇦🇹", description: "Formador ultra rígido e dedicado dos maiores talentos jovens da academia Red Bull." };
+      return { name: "Laurent Mekies", country: "França 🇫🇷", description: "Ex-diretor esportivo da Ferrari contratado para infundir disciplina operacional italiana." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2012) return { name: "Giorgio Ascanelli", country: "Itália 🇮🇹", description: "Ex-engenheiro de Senna, alinhou o chassi STR3 que rendeu a antológica vitória de Vettel em Monza." };
+      return { name: "Jody Egginton", country: "Reino Unido 🇬🇧", description: "Diretor de engenharia contemporâneo que foca em extrair refinamento aerodinâmico sob orçamentos enxutos." };
+    }
+    if (role === 'strategist') {
+      return { name: "Marco Matassa", country: "Itália 🇮🇹", description: "Coordenador de pista responsável por calibrar undercuts e paradas rápidas da garagem júnior." };
+    }
+  }
+
+  if (t.includes('aston') || t.includes('force india') || t.includes('racing point')) {
+    if (role === 'boss') {
+      if (season <= 2021) return { name: "Otmar Szafnauer", country: "Estados Unidos 🇺🇸", description: "Mestre operacional de boxes ágil, conhecido em extrair o máximo do time sob orçamentos apertados." };
+      return { name: "Mike Krack", country: "Luxemburgo 🇱🇺", description: "Líder técnico pragmático alinhando a robusta garagem verde sob os investimentos de Stroll." };
+    }
+    if (role === 'engineer') {
+      if (season <= 2022) return { name: "Andrew Green", country: "Reino Unido 🇬🇧", description: "Projetista astuto que criou carros brilhantemente eficientes nas retas sob o nome Force India." };
+      return { name: "Dan Fallows", country: "Reino Unido 🇬🇧", description: "Ex-pupilo de Adrian Newey contratado a peso de ouro para desenhar o audacioso assoalho da Aston Martin." };
+    }
+    if (role === 'strategist') {
+      return { name: "Bernadette Collins", country: "Reino Unido 🇬🇧", description: "Estrategista renomada famosa por leituras agudas de desgaste de pneus nos boxes da equipe." };
+    }
+  }
+
+  // Fallbacks:
+  if (role === 'boss') {
+    if (t.includes('toyota')) return { name: "Tsutomu Tomita", country: "Japão 🇯🇵", description: "Líder corporativo japonês que capitaneou o audacioso projeto fabril Toyota na F1." };
+    if (t.includes('bar')) return { name: "Craig Pollock", country: "Reino Unido 🇬🇧", description: "Fundador audaz e mestre de negócios da equipe BAR ao lado de Jacques Villeneuve." };
+    if (t.includes('ligier')) return { name: "Guy Ligier", country: "França 🇫🇷", description: "O patriota herói francês que fundou e comandou a mítica garagem azul de vitórias memoráveis." };
+    if (t.includes('brm')) return { name: "Alfred Owen", country: "Reino Unido 🇬🇧", description: "Presidente audaz britânico que transformou a BRM em marca campeã do mundo nos anos 60." };
+    if (t.includes('cooper')) return { name: "John Cooper", country: "Reino Unido 🇬🇧", description: "Pai da revolução do motor traseiro, um dos maiores ícones de engenharia da história." };
+    if (t.includes('maserati')) return { name: "Nello Ugolini", country: "Itália 🇮🇹", description: "Grande mestre esportivo clássico dos boxes vencedores de Juan Manuel Fangio nos anos 50." };
+    return null;
+  }
+  if (role === 'engineer') {
+    if (t.includes('toyota')) return { name: "Mike Gascoyne", country: "Reino Unido 🇬🇧", description: "Designer respeitado contratado a peso de ouro para trazer rigor aerodinâmico à garagem nipônica." };
+    if (t.includes('bar')) return { name: "Malcolm Oastler", country: "Austrália 🇦🇺", description: "Desenhou bólidos robustos impulsionados pelos brutais motores Honda V10." };
+    if (t.includes('ligier')) return { name: "Gérard Ducarouge", country: "França 🇫🇷", description: "Desenhou os clássicos bólidos franceses de azul celeste excelentes nas pistas de alta velocidade." };
+    if (t.includes('brm')) return { name: "Tony Rudd", country: "Reino Unido 🇬🇧", description: "Mente criativa que desenhou bólidos e motores emblemáticos de corrida da BRM." };
+    if (t.includes('cooper')) return { name: "Owen Maddock", country: "Reino Unido 🇬🇧", description: "Pioneiro da aerodinâmica clássica que viabilizou o chassi leve com motor traseiro campeão da Cooper." };
+    if (t.includes('maserati')) return { name: "Gioacchino Colombo", country: "Itália 🇮🇹", description: "Lendário engenheiro italiano clássico, pai dos brutais blocos de motor V8 e 6 em linha." };
+    return null;
+  }
+  
+  // strategist fallbacks
+  if (t.includes('toyota')) return { name: "Dieter Gass", country: "Alemanha 🇩🇪", description: "Coordenador técnico de pista focado em simulações robustas e paradas conservadoras." };
+  if (t.includes('bar')) return { name: "Jock Clear", country: "Reino Unido 🇬🇧", description: "Engenheiro de corrida cerebral com imensa leitura tática de pit wall clássico." };
+  if (t.includes('ligier')) return { name: "Guy Ligier", country: "França 🇫🇷", description: "Mestre tático autônomo que ditava ordens de pit de forma impetuosa." };
+  if (t.includes('cooper') || t.includes('maserati') || t.includes('brm')) {
+    return { name: "Guerino Bertocchi", country: "Itália 🇮🇹", description: "Lendário mecânico-chefe e assistente tático de pista clássico da era de ouro dos anos 50." };
+  }
+  return null;
+};
+
+const resolveRealStaff = (teamName: string, season: number, role: 'boss' | 'engineer' | 'strategist', avgRating: number) => {
+  const queryTeam = teamName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  // 1. Try exact year and team match in PRD_STAFF_RECORDS
+  const exactMatches = PRD_STAFF_RECORDS.filter(rec => {
+    const recRole = mapRoleType(rec.role_normalized);
+    return recRole === role && isTeamMatch(rec.equipe_nome, queryTeam) && rec.ano === season;
+  });
+  
+  if (exactMatches.length > 0) {
+    const match = exactMatches[0];
+    return {
+      name: match.nome,
+      country: mapNacionalidade(match.nacionalidade),
+      overall: match.overall,
+      description: match.observacao || getDefaultDesc(match.nome, teamName, season, role)
+    };
+  }
+
+  // 2. Try era-appropriate backup database
+  const backup = getBackupStaff(teamName, season, role, avgRating);
+  if (backup) {
+    // Attempt to map back the overall rating if they are in the PRD database under other years
+    const prdSameNameMatches = PRD_STAFF_RECORDS.filter(p => p.nome.toLowerCase() === backup.name.toLowerCase());
+    let specOverall = avgRating;
+    if (prdSameNameMatches.length > 0) {
+      const sortedByYearDiff = prdSameNameMatches.sort((a, b) => Math.abs(a.ano - season) - Math.abs(b.ano - season));
+      specOverall = sortedByYearDiff[0].overall;
+    } else {
+      specOverall = Math.max(70, Math.min(99, Math.round(avgRating + (Math.random() * 4 - 2))));
+    }
+    return {
+      name: backup.name,
+      country: backup.country,
+      overall: specOverall,
+      description: backup.description
+    };
+  }
+
+  // 3. Proximity search in PRD_STAFF_RECORDS for same team & role
+  const sameTeamRoleCandidates = PRD_STAFF_RECORDS.filter(rec => {
+    const recRole = mapRoleType(rec.role_normalized);
+    return recRole === role && isTeamMatch(rec.equipe_nome, queryTeam);
+  });
+
+  if (sameTeamRoleCandidates.length > 0) {
+    const sorted = sameTeamRoleCandidates.sort((a, b) => Math.abs(a.ano - season) - Math.abs(b.ano - season));
+    const match = sorted[0];
+    return {
+      name: match.nome,
+      country: mapNacionalidade(match.nacionalidade),
+      overall: match.overall,
+      description: match.observacao || getDefaultDesc(match.nome, teamName, season, role)
+    };
+  }
+
+  // Absolute fallback:
+  const roleTypeMap = {
+    'boss': ['team_principal'],
+    'engineer': ['technical_director', 'chief_designer', 'chief_engineer'],
+    'strategist': ['strategy_lead']
+  };
+  const targetRoleTypes = roleTypeMap[role];
+  const allStaffOfRole = PRD_STAFF_RECORDS.filter(p => targetRoleTypes.includes(p.role_normalized));
+  
+  if (allStaffOfRole.length > 0) {
+    const sorted = allStaffOfRole.sort((a, b) => Math.abs(a.ano - season) - Math.abs(b.ano - season));
+    const match = sorted[0];
+    return {
+      name: match.nome,
+      country: mapNacionalidade(match.nacionalidade),
+      overall: match.overall,
+      description: `Originalmente da equipe ${match.equipe_nome} (${match.ano}). Contratado de emergência para atuar pela escuderia ${teamName} na temporada de ${season}. ${match.observacao || ''}`
+    };
+  }
+
+  return {
+    name: role === 'boss' ? `Diretor ${teamName}` : role === 'engineer' ? `Engenheiro ${teamName}` : `Estrategista ${teamName}`,
+    country: 'Mundo 🌐',
+    overall: avgRating,
+    description: `Responsável de alto nível atuando pela escuderia ${teamName} na temporada de ${season}.`
+  };
+};
+
+const dynamicTeams: TeamCombination[] = [];
+
+// Group raw stats by combination of year and teamName
+const groups: Record<string, StatsDriverRaw[]> = {};
+(historicalStatsRaw as StatsDriverRaw[]).forEach(row => {
+  const key = `${row.year}_${row.teamName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+  if (!groups[key]) {
+    groups[key] = [];
+  }
+  groups[key].push(row);
+});
+
+// For each group, create a TeamCombination if we don't have it in hardcoded SEASONS_TEAMS
+Object.entries(groups).forEach(([groupKey, driversList]) => {
+  if (driversList.length === 0) return;
+  const first = driversList[0];
+  const season = first.year;
+  const teamName = first.teamName;
+  
+  // Skip if we already have this exact combination in the hardcoded SEASONS_TEAMS
+  const alreadyExists = HARDCODED_SEASONS_TEAMS.some(t => {
+    return t.season === season && (
+      t.teamName.toLowerCase() === teamName.toLowerCase() || 
+      t.teamId === `${teamName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${season}`
+    );
+  });
+  if (alreadyExists) return;
+
+  // Let's build drivers list
+  const teamDrivers = driversList.map(d => {
+    const driverId = `${d.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${season}`;
+    const rating = Math.max(50, Math.min(99, d.rating_geral));
+    return {
+      id: driverId,
+      name: d.name,
+      country: getDriverRealCountryAndFlag(d.name),
+      titles: d.pos === '1' ? 1 : 0,
+      wins: d.wins,
+      podiums: d.podiums,
+      poles: d.wins, // approximate poles as wins for historic stats
+      rating_geral: rating,
+      pace: Math.max(50, Math.min(100, Math.round(rating + (Math.random() * 4 - 2)))),
+      consistency: Math.max(50, Math.min(100, Math.round(rating + (Math.random() * 6 - 3)))),
+      chuva: Math.max(50, Math.min(100, Math.round(rating + (Math.random() * 8 - 4)))),
+      aggressiveness: Math.max(30, Math.min(100, Math.round(70 + (Math.random() * 25 - 12)))),
+      reliability: Math.max(50, Math.min(100, Math.round(rating + (Math.random() * 6 - 3)))),
+      description: `Piloto titular da equipe ${teamName} disputando a lendária temporada de ${season}. Conquistou a posição final de P${d.pos} com ${d.points} pontos.`
+    };
+  });
+
+  // Inject real teammates from our database if available
+  const dynKey = `${season}_${teamName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+  let foundTeammates: TeammateData[] = [];
+  
+  for (const [dbKey, teammates] of Object.entries(REAL_TEAMMATES_DB)) {
+    const dbKeyNorm = dbKey.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (dynKey === dbKeyNorm || dynKey.includes(dbKeyNorm) || dbKeyNorm.includes(dynKey)) {
+      foundTeammates = teammates;
+      break;
+    }
+  }
+
+  // Map and add the real teammates
+  foundTeammates.forEach(tm => {
+    const baseRating = teamDrivers[0]?.rating_geral || 82;
+    const finalRating = Math.max(50, Math.min(99, Math.round(baseRating + (tm.rating_offset || -4))));
+    
+    // Prevent duplicate entries
+    const alreadyIn = teamDrivers.some(d => d.name.toLowerCase() === tm.name.toLowerCase());
+    if (alreadyIn) return;
+
+    teamDrivers.push({
+      id: `${tm.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${season}`,
+      name: tm.name,
+      country: tm.country,
+      titles: tm.titles,
+      wins: tm.wins,
+      podiums: tm.podiums,
+      poles: tm.poles,
+      rating_geral: finalRating,
+      pace: Math.max(50, Math.min(100, Math.round(finalRating + (Math.random() * 4 - 2)))),
+      consistency: Math.max(50, Math.min(100, Math.round(finalRating + (Math.random() * 6 - 3)))),
+      chuva: Math.max(50, Math.min(100, Math.round(finalRating + (Math.random() * 8 - 4)))),
+      aggressiveness: Math.max(30, Math.min(100, Math.round(70 + (Math.random() * 25 - 12)))),
+      reliability: Math.max(50, Math.min(100, Math.round(finalRating + (Math.random() * 6 - 3)))),
+      description: tm.description
+    });
+  });
+
+  // Calculate average rating to scale personnel stats
+  const avgRating = Math.round(teamDrivers.reduce((acc, cr) => acc + cr.rating_geral, 0) / teamDrivers.length) || 75;
+
+  const getDynamicColors = (team: string) => {
+    const lower = team.toLowerCase();
+    let isRealBrand = false;
+    
+    // Check if it's a real F1 team
+    const realKeywords = [
+      'ferrari', 'mclaren', 'mercedes', 'red bull', 'redbull', 'renault', 'williams', 
+      'sauber', 'alfa romeo', 'jordan', 'benetton', 'lotus', 'brabham', 'tyrrell', 
+      'bwt', 'alpine', 'aston martin', 'toro rosso', 'alphatauri', 'brawn', 'toyota', 
+      'bar', 'ligier', 'brm', 'cooper', 'maserati', 'minardi', 'haas', 'force india', 
+      'racing point', 'audi'
+    ];
+    if (realKeywords.some(kw => lower.includes(kw))) {
+      isRealBrand = true;
+    }
+
+    if (lower.includes('ferrari')) return { logo: 'from-red-600 to-yellow-500', border: 'border-red-600', text: 'text-red-500', isRealBrand };
+    if (lower.includes('mclaren')) return { logo: 'from-orange-500 to-neutral-900', border: 'border-orange-500', text: 'text-orange-500', isRealBrand };
+    if (lower.includes('mercedes')) return { logo: 'from-cyan-400 to-zinc-400', border: 'border-cyan-400', text: 'text-cyan-400', isRealBrand };
+    if (lower.includes('red bull') || lower.includes('redbull')) return { logo: 'from-blue-900 to-yellow-400', border: 'border-blue-700', text: 'text-blue-500', isRealBrand };
+    if (lower.includes('renault')) return { logo: 'from-yellow-400 to-black', border: 'border-yellow-400', text: 'text-yellow-400', isRealBrand };
+    if (lower.includes('williams')) return { logo: 'from-blue-600 to-white', border: 'border-blue-600', text: 'text-blue-600', isRealBrand };
+    if (lower.includes('sauber') || lower.includes('alfa romeo')) return { logo: 'from-red-700 to-white', border: 'border-red-700', text: 'text-red-700', isRealBrand };
+    if (lower.includes('jordan')) return { logo: 'from-yellow-300 to-black', border: 'border-yellow-400', text: 'text-yellow-400', isRealBrand };
+    if (lower.includes('benetton')) return { logo: 'from-emerald-500 to-sky-400', border: 'border-emerald-500', text: 'text-emerald-500', isRealBrand };
+    if (lower.includes('lotus')) return { logo: 'from-emerald-800 to-yellow-400', border: 'border-emerald-700', text: 'text-emerald-500', isRealBrand };
+    if (lower.includes('brabham')) return { logo: 'from-blue-800 to-yellow-400', border: 'border-blue-800', text: 'text-blue-500', isRealBrand };
+    if (lower.includes('tyrrell')) return { logo: 'from-blue-900 to-white', border: 'border-blue-900', text: 'text-blue-600', isRealBrand };
+    if (lower.includes('bwt') || lower.includes('alpine') || lower.includes('aston martin')) return { logo: 'from-emerald-900 to-black', border: 'border-emerald-800', text: 'text-emerald-600', isRealBrand };
+    if (lower.includes('toyota')) return { logo: 'from-red-600 to-white', border: 'border-red-500', text: 'text-red-600', isRealBrand };
+    if (lower.includes('bar')) return { logo: 'from-emerald-950 to-white', border: 'border-emerald-900', text: 'text-green-700', isRealBrand };
+    if (lower.includes('ligier')) return { logo: 'from-blue-800 to-white', border: 'border-blue-700', text: 'text-blue-600', isRealBrand };
+    if (lower.includes('force india')) return { logo: 'from-orange-500 to-emerald-500', border: 'border-emerald-500', text: 'text-orange-500', isRealBrand };
+    
+    return { logo: 'from-slate-800 to-zinc-900', border: 'border-gray-800', text: 'text-gray-400', isRealBrand };
+  };
+
+  const { logo, border, text, isRealBrand } = getDynamicColors(teamName);
+
+  // Maintain only verified real F1 teams
+  if (!isRealBrand) return;
+
+  // Resolve authentic staff data
+  const realBoss = resolveRealStaff(teamName, season, 'boss', avgRating);
+  const realStrategist = resolveRealStaff(teamName, season, 'strategist', avgRating);
+  const realEngineer = resolveRealStaff(teamName, season, 'engineer', avgRating);
+
+  dynamicTeams.push({
+    season,
+    teamId: `${teamName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${season}`,
+    teamName,
+    logoColor: logo,
+    borderColor: border,
+    textColor: text,
+    drivers: teamDrivers,
+    boss: {
+      id: `boss_${groupKey}`,
+      name: realBoss.name,
+      country: realBoss.country,
+      rating_geral: realBoss.overall,
+      leadership: Math.max(50, Math.min(100, Math.round(realBoss.overall + (Math.random() * 4 - 2)))),
+      pressure_handling: Math.max(50, Math.min(100, Math.round(realBoss.overall + (Math.random() * 6 - 3)))),
+      prestige: Math.max(50, Math.min(100, Math.round(realBoss.overall + (Math.random() * 4 - 2)))),
+      description: realBoss.description
+    },
+    chassis: {
+      id: `chassis_${groupKey}`,
+      name: `${teamName} C-${season}`,
+      engine: `${teamName} PowerUnit`,
+      rating_geral: Math.max(50, Math.min(105, Math.round(avgRating + (Math.random() * 6 - 3)))),
+      top_speed: Math.max(50, Math.min(100, Math.round(avgRating + (Math.random() * 8 - 4)))),
+      aerodynamics: Math.max(50, Math.min(100, Math.round(avgRating + (Math.random() * 8 - 4)))),
+      conducao: Math.max(50, Math.min(100, Math.round(avgRating + (Math.random() * 6 - 3)))),
+      reliability: Math.max(50, Math.min(100, Math.round(avgRating + (Math.random() * 10 - 5)))),
+      description: `Modelo oficial de chassi aerodinamicamente moldado para a performance da escuderia ${teamName} em ${season}.`
+    },
+    strategist: {
+      id: `strategist_${groupKey}`,
+      name: realStrategist.name,
+      rating_geral: realStrategist.overall,
+      calculated_risk: Math.round(40 + Math.random() * 50),
+      pit_tactics: Math.max(50, Math.min(100, Math.round(realStrategist.overall + (Math.random() * 4 - 2)))),
+      reactivity: Math.max(50, Math.min(100, Math.round(realStrategist.overall + (Math.random() * 6 - 3)))),
+      description: realStrategist.description
+    },
+    engineer: {
+      id: `engineer_${groupKey}`,
+      name: realEngineer.name,
+      rating_geral: realEngineer.overall,
+      aerodynamics: Math.max(50, Math.min(100, Math.round(realEngineer.overall + (Math.random() * 6 - 3)))),
+      innovation: Math.max(50, Math.min(100, Math.round(realEngineer.overall + (Math.random() * 8 - 4)))),
+      weight_saving: Math.max(50, Math.min(100, Math.round(realEngineer.overall + (Math.random() * 4 - 2)))),
+      description: realEngineer.description
+    },
+    isWorst: avgRating < 75
+  });
+});
+
+export const SEASONS_TEAMS: TeamCombination[] = [...HARDCODED_SEASONS_TEAMS, ...dynamicTeams];
 
 export function getRandomComboExcept(excludeIds: string[], onlyWorst: boolean = false): TeamCombination {
   let filteredPool = SEASONS_TEAMS.filter(item => onlyWorst ? item.isWorst === true : !item.isWorst);
